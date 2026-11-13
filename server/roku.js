@@ -626,20 +626,28 @@ async function curlFetch(url, options = {}, timeoutMs = 1800) {
   return directCurlFetch(url, options, timeoutMs);
 }
 
-async function fetchWithTimeout(url, options = {}, timeoutMs = 1800) {
+async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
+  // If routing over the internet/tunnel, give packets slightly longer to traverse WAN
+  const effectiveTimeout = (process.env.ROKU_TUNNEL_URL || process.env.ROKU_PUBLIC_URL)
+    ? Math.max(timeoutMs, 4000)
+    : timeoutMs;
+
   // On macOS 15+, non-platform Node binaries can receive EHOSTUNREACH on LAN sockets
   // due to Local Network Privacy restrictions, whereas /usr/bin/curl succeeds.
   if (process.platform === 'darwin' && /^http:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(url)) {
-    return curlFetch(url, options, timeoutMs);
+    return curlFetch(url, options, effectiveTimeout);
   }
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(), effectiveTimeout);
   try {
     const res = await fetch(url, { ...options, signal: controller.signal });
     return res;
   } catch (err) {
     if (process.platform === 'darwin') {
-      return curlFetch(url, options, timeoutMs);
+      return curlFetch(url, options, effectiveTimeout);
+    }
+    if (err.name === 'AbortError') {
+      throw new Error(`Connection to Roku timed out at ${url}. Check your router port forward & public IP.`);
     }
     throw err;
   } finally {
