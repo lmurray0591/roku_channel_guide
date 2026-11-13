@@ -447,11 +447,20 @@ async function getSportsGuideData({ installedApps = [], enabledAppKeys = [], for
     };
   }
 
-  const results = await Promise.all(
-    LEAGUES.map((league) => fetchLeagueEvents(league, appsCatalog))
-  );
+  let allGames = [];
+  try {
+    const results = await Promise.all(
+      LEAGUES.map((league) => fetchLeagueEvents(league, appsCatalog))
+    );
+    allGames = results.flat();
+  } catch (fetchErr) {
+    console.warn('Network error fetching sports leagues:', fetchErr.message);
+  }
 
-  const allGames = results.flat();
+  // If ESPN network calls failed or returned empty, reuse previous valid events
+  if (allGames.length === 0 && sportsCache.events.length > 0) {
+    allGames = sportsCache.events;
+  }
 
   // Sort order:
   // 1. Live games ('in') first, sorted by marquee leagues (NFL, NCAAF, EPL, UCL, NBA, NHL, etc.)

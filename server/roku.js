@@ -610,10 +610,17 @@ async function curlFetch(url, options = {}, timeoutMs = 1800) {
       return await bridgeFetch(url, options, timeoutMs);
     } catch (err) {
       if (err && err.code === 'ECONNREFUSED') {
-        await ensureMacLanBridge();
-        return await bridgeFetch(url, options, timeoutMs);
+        try {
+          await ensureMacLanBridge();
+          return await bridgeFetch(url, options, timeoutMs);
+        } catch {}
       }
-      throw err;
+      // If bridge encounters an issue, fallback directly to direct curl
+      try {
+        return await directCurlFetch(url, options, timeoutMs);
+      } catch (directErr) {
+        throw err || directErr;
+      }
     }
   }
   return directCurlFetch(url, options, timeoutMs);

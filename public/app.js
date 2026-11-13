@@ -154,7 +154,11 @@ async function fetchGuide(forceRefresh = false) {
     renderQuickAppStrip();
   } catch (err) {
     console.error('Guide fetch error:', err);
-    els.gamesContainer.innerHTML = `<div class="empty-state">Unable to load sports schedule. Tap ↻ to retry.</div>`;
+    if (!state.games || state.games.length === 0) {
+      els.gamesContainer.innerHTML = `<div class="empty-state">Unable to load sports schedule. Tap ↻ to retry.</div>`;
+    } else {
+      showToast('⚠️ Could not refresh live scores (showing cached schedule)');
+    }
   }
 }
 
@@ -763,6 +767,19 @@ function renderGames() {
 async function launchAppOnTv(appId, appName) {
   const tvName = state.activeTv?.name || state.device?.name || 'Roku TV';
   showToast(`🚀 Opening ${appName} on ${tvName}...`);
+
+  // Immediately bring up the remote modal so the user has immediate control
+  if (els.remoteModal) {
+    els.voiceModal?.classList.remove('open');
+    els.sportsModal?.classList.remove('open');
+    els.appsModal?.classList.remove('open');
+    els.setupModal?.classList.remove('open');
+    if (els.remoteActiveAppLabel) {
+      els.remoteActiveAppLabel.textContent = `Now Controlling: ${appName} • ${tvName}`;
+    }
+    els.remoteModal.classList.add('open');
+  }
+
   try {
     const res = await fetch('/api/roku/launch', {
       method: 'POST',
@@ -1212,16 +1229,17 @@ function initVoiceControl() {
         }
 
         try {
-          speechRecognizer.abort();
-        } catch {}
-
-        setTimeout(() => {
+          // CRITICAL FOR IOS SAFARI: Start synchronously within the user tap event!
+          speechRecognizer.start();
+        } catch (err) {
+          console.warn('SpeechRecognition immediate start error:', err);
           try {
+            speechRecognizer.abort();
             speechRecognizer.start();
-          } catch (err) {
-            console.warn('SpeechRecognition start error:', err);
+          } catch (e2) {
+            console.warn('SpeechRecognition retry error:', e2);
           }
-        }, 150);
+        }
       } else {
         const ua = navigator.userAgent || '';
         const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);

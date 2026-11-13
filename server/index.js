@@ -1,5 +1,8 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
+const https = require('https');
+const http = require('http');
 const {
   loadConfig,
   saveConfig,
@@ -335,22 +338,56 @@ app.get('/api/guide', async (req, res) => {
   }
 });
 
-app.listen(PORT, '0.0.0.0', async () => {
+const httpServer = http.createServer(app);
+httpServer.listen(PORT, '0.0.0.0', () => {
   const lanUrl = getLanUrl();
-  console.log(`\n🏈 Roku Sports Guide running!`);
+  console.log(`\n🏈 Roku Sports Guide HTTP running!`);
   console.log(`   Local:   http://localhost:${PORT}`);
-  console.log(`   Phone:   ${lanUrl}\n`);
+  console.log(`   Phone:   ${lanUrl}`);
+});
 
-  // Proactively discover Roku TV in background on launch
+// HTTPS Server for iOS Secure Context (Unlocks Microphone on iPhone Safari & Chrome)
+const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
+try {
+  const keyPath = path.join(__dirname, 'key.pem');
+  const certPath = path.join(__dirname, 'cert.pem');
+  if (fs.existsSync(keyPath) && fs.existsSync(certPath)) {
+    const credentials = {
+      key: fs.readFileSync(keyPath),
+      cert: fs.readFileSync(certPath)
+    };
+    const httpsServer = https.createServer(credentials, app);
+    httpsServer.listen(HTTPS_PORT, '0.0.0.0', () => {
+      const subnets = getLocalSubnets();
+      const ip = subnets[0]?.localIp || 'localhost';
+      console.log(`🔒 HTTPS Server running (Mic & Speech Enabled for iPhone):`);
+      console.log(`   iPhone URL: https://${ip}:${HTTPS_PORT}\n`);
+    });
+  }
+} catch (e) {
+  console.warn('Could not start HTTPS server:', e.message);
+}
+
+// Proactively discover Roku TV in background on launch
+(async () => {
   try {
     const devices = await discoverRokuDevices();
     if (devices.length > 0) {
       console.log(`📺 Discovered Roku TV: ${devices[0].name} (${devices[0].ip})`);
       await getInstalledApps(devices[0].ip);
-    } else {
-      console.log(`ℹ️  No Roku TV responded to initial scan (TV may be off or on another subnet).`);
     }
   } catch (err) {
     console.error('Background Roku discovery error:', err.message);
   }
+})();
+
+// Process-level crash prevention: Ensure the server never dies on unhandled network errors
+process.on('uncaughtException', (err) => {
+  console.error('🛡️ Intercepted uncaught exception (server kept running):', err.message || err);
 });
+
+process.on('unhandledRejection', (reason) => {
+  console.error('🛡️ Intercepted unhandled promise rejection (server kept running):', reason?.message || reason);
+});
+
+
