@@ -1,0 +1,19 @@
+{
+  "activeTvIp": null,
+  "savedTvs": [],
+  "enabledAppKeys": [
+    "peacock",
+    "nbc_sports",
+    "espn",
+    "fox_sports",
+    "prime_video",
+    "max",
+    "netflix",
+    "apple_tv",
+    "nfl",
+    "youtube_tv",
+    "paramount"
+  ],
+  "favoriteTeams": [],
+  "cachedInstalledApps": []
+}

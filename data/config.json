@@ -1,0 +1,352 @@
+{
+  "activeTvIp": "192.168.1.8",
+  "savedTvs": [
+    {
+      "ip": "192.168.1.8",
+      "name": "TCL•Roku TV - YN0016806284",
+      "isTv": true,
+      "lastSeen": "2026-11-12T22:35:56.852Z",
+      "modelName": "Roku TV",
+      "vendorName": "Roku",
+      "mac": "1c:1e:e3:fc:66:20",
+      "wifiMac": null,
+      "ethernetMac": null
+    },
+    {
+      "ip": "192.168.1.4",
+      "name": "Roku 2 - 5F464F108804",
+      "modelName": "Roku 2",
+      "vendorName": "Roku",
+      "isTv": false,
+      "lastSeen": "2026-11-12T22:21:17.840Z"
+    }
+  ],
+  "enabledAppKeys": [
+    "peacock",
+    "nbc_sports",
+    "espn",
+    "fox_sports",
+    "prime_video",
+    "max",
+    "netflix",
+    "apple_tv",
+    "nfl",
+    "youtube_tv",
+    "paramount"
+  ],
+  "favoriteTeams": [],
+  "cachedInstalledApps": [
+    {
+      "id": "tvinput.hdmi2",
+      "type": "tvin",
+      "version": "1.0.0",
+      "name": "HDMI 2"
+    },
+    {
+      "id": "tvinput.hdmi3",
+      "type": "tvin",
+      "version": "1.0.0",
+      "name": "HDMI 3"
+    },
+    {
+      "id": "tvinput.hdmi1",
+      "type": "tvin",
+      "version": "1.0.0",
+      "name": "Cable box"
+    },
+    {
+      "id": "tvinput.cvbs",
+      "type": "tvin",
+      "version": "1.0.0",
+      "name": "AV"
+    },
+    {
+      "id": "tvinput.dtv",
+      "type": "tvin",
+      "version": "1.0.0",
+      "name": "Live TV"
+    },
+    {
+      "id": "13",
+      "type": "appl",
+      "version": "16.0.2026103011",
+      "name": "Prime Video"
+    },
+    {
+      "id": "2285",
+      "type": "appl",
+      "version": "7.8.0",
+      "name": "Hulu"
+    },
+    {
+      "id": "13842",
+      "type": "appl",
+      "version": "2.0.38",
+      "name": "Fandango"
+    },
+    {
+      "id": "18746",
+      "type": "appl",
+      "version": "5.13.2026082001",
+      "name": "Fox Business Network"
+    },
+    {
+      "id": "151908",
+      "type": "appl",
+      "version": "26.40.12",
+      "name": "The Roku Channel"
+    },
+    {
+      "id": "8629",
+      "type": "appl",
+      "version": "2.1.2401081327",
+      "name": "The Wall Street Journal."
+    },
+    {
+      "id": "2213",
+      "type": "appl",
+      "version": "5.5.22",
+      "name": "Roku Media Player"
+    },
+    {
+      "id": "46041",
+      "type": "appl",
+      "version": "9.17.27976",
+      "name": "Sling TV - Live Sports, News, Shows + Freestream"
+    },
+    {
+      "id": "41530",
+      "type": "appl",
+      "version": "1.2.0",
+      "name": "R-Cast"
+    },
+    {
+      "id": "837",
+      "type": "appl",
+      "version": "2.20.176",
+      "name": "YouTube"
+    },
+    {
+      "id": "34376",
+      "type": "appl",
+      "version": "6.12.2026111000",
+      "name": "ESPN"
+    },
+    {
+      "id": "38820",
+      "type": "appl",
+      "version": "1.0.1",
+      "name": "Showtime Anytime"
+    },
+    {
+      "id": "96041",
+      "type": "appl",
+      "version": "7.18.2",
+      "name": "Discovery GO"
+    },
+    {
+      "id": "8838",
+      "type": "appl",
+      "version": "1.0.2",
+      "name": "SHOWTIME"
+    },
+    {
+      "id": "53725",
+      "type": "appl",
+      "version": "9.30.0",
+      "name": "NBC Sports"
+    },
+    {
+      "id": "17112",
+      "type": "appl",
+      "version": "11.11.8",
+      "name": "CBS Sports Stream & Watch Live"
+    },
+    {
+      "id": "31440",
+      "type": "appl",
+      "version": "10.9.20261013",
+      "name": "Paramount Plus"
+    },
+    {
+      "id": "111255",
+      "type": "appl",
+      "version": "5.19.3",
+      "name": "The CW"
+    },
+    {
+      "id": "12716",
+      "type": "appl",
+      "version": "3.4.20",
+      "name": "AMC"
+    },
+    {
+      "id": "565227",
+      "type": "appl",
+      "version": "52.4.19",
+      "name": "Movie Guide - Find Free Movies"
+    },
+    {
+      "id": "291097",
+      "type": "appl",
+      "version": "1.67.2026100900",
+      "name": "Disney Plus"
+    },
+    {
+      "id": "44856",
+      "type": "appl",
+      "version": "5.21.0",
+      "name": "NFL"
+    },
+    {
+      "id": "154157",
+      "type": "appl",
+      "version": "8.15.0",
+      "name": "Watch TNT"
+    },
+    {
+      "id": "65978",
+      "type": "appl",
+      "version": "27.1.1875",
+      "name": "CNN"
+    },
+    {
+      "id": "65067",
+      "type": "appl",
+      "version": "5.12.26",
+      "name": "STARZ"
+    },
+    {
+      "id": "573804",
+      "type": "appl",
+      "version": "4.0.22",
+      "name": "Univision App: Stream TV Shows"
+    },
+    {
+      "id": "593099",
+      "type": "appl",
+      "version": "7.11.11",
+      "name": "Peacock TV"
+    },
+    {
+      "id": "61322",
+      "type": "appl",
+      "version": "22.0.0",
+      "name": "HBO Max"
+    },
+    {
+      "id": "623184",
+      "type": "appl",
+      "version": "1.0.2",
+      "name": "YES Network"
+    },
+    {
+      "id": "22297",
+      "type": "appl",
+      "version": "2.15.22",
+      "name": "Spotify Music"
+    },
+    {
+      "id": "41468",
+      "type": "appl",
+      "version": "3.12.2",
+      "name": "Tubi - Free Movies & TV"
+    },
+    {
+      "id": "154149",
+      "type": "appl",
+      "version": "8.15.0",
+      "name": "Watch TBS"
+    },
+    {
+      "id": "551012",
+      "type": "appl",
+      "version": "17.0.28",
+      "name": "Apple TV"
+    },
+    {
+      "id": "173516",
+      "type": "appl",
+      "version": "8.15.0",
+      "name": "truTV"
+    },
+    {
+      "id": "43465",
+      "type": "appl",
+      "version": "5.20.200",
+      "name": "Fubo: Watch Live TV & Sports"
+    },
+    {
+      "id": "274144",
+      "type": "appl",
+      "version": "1.13.14",
+      "name": "Screen Mirroring"
+    },
+    {
+      "id": "74519",
+      "type": "appl",
+      "version": "6.3.20261012",
+      "name": "Pluto TV - Free Movies/Shows"
+    },
+    {
+      "id": "773622",
+      "type": "appl",
+      "version": "2.16.1",
+      "name": "Backdrops"
+    },
+    {
+      "id": "68669",
+      "type": "appl",
+      "version": "9.30.0",
+      "name": "NBC"
+    },
+    {
+      "id": "583202",
+      "type": "appl",
+      "version": "11.12.2026110600",
+      "name": "ABC 7 New York"
+    },
+    {
+      "id": "808732",
+      "type": "appl",
+      "version": "1.24.7724",
+      "name": "FOX One: Live News, Sports, TV"
+    },
+    {
+      "id": "862686",
+      "type": "appl",
+      "version": "1.3.4",
+      "name": "Golf Channel"
+    },
+    {
+      "id": "12",
+      "type": "appl",
+      "version": "5.1.130079007",
+      "name": "Netflix"
+    },
+    {
+      "id": "9160",
+      "type": "appl",
+      "version": "11.3.1",
+      "name": "CNBC"
+    },
+    {
+      "id": "619667",
+      "type": "appl",
+      "version": "10.1.23",
+      "name": "CBS"
+    },
+    {
+      "id": "86306",
+      "type": "appl",
+      "version": "9.30.0",
+      "name": "Bravo"
+    }
+  ],
+  "rokuIp": "192.168.1.8",
+  "deviceName": "TCL•Roku TV - YN0016806284",
+  "espnNav": {
+    "homeRenderMs": 25000,
+    "colOffset": 1
+  }
+}

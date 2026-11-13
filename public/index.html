@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#090d16" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="SportsGuide" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" href="/icon-192.png" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="stylesheet" href="/styles.css" />
+  <title>Roku Sports Guide</title>
+</head>
+<body>
+  <!-- Toast Banner -->
+  <div id="toast" class="toast"></div>
+
+  <!-- Top Sticky Header -->
+  <header class="app-header">
+    <div class="header-top-row">
+      <div class="brand-title">
+        <span>🏈</span>
+        <span>Roku Sports</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <button id="tvPowerBtn" class="tv-power-btn" title="Turn TV On / Off" style="display: inline-flex;">
+          <span id="tvPowerIcon">⚡</span>
+          <span id="tvPowerLabel">Wake TV</span>
+        </button>
+        <button id="tvStatusBtn" class="tv-status-pill" title="Manage & Switch Roku TVs">
+          <span id="tvStatusDot" class="status-dot"></span>
+          <span id="tvStatusText">Connect TV</span>
+          <span class="dropdown-arrow">▾</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Search & Settings Bar -->
+    <div class="search-row">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input
+          id="searchInput"
+          type="search"
+          placeholder="Search team, matchup, or channel (e.g. Chiefs, CBS)..."
+          autocomplete="off"
+        />
+        <button id="clearSearchBtn" class="clear-search-btn" aria-label="Clear search">✕</button>
+      </div>
+      <button id="voiceBtn" class="icon-btn voice-btn" title="Voice Control (e.g. 'Turn TV on', 'Go to the Knicks game')">
+        <span class="mic-icon">🎙️</span>
+        <span class="voice-label">Voice</span>
+      </button>
+      <button id="myAppsBtn" class="icon-btn" title="Choose your Roku streaming apps">
+        <span>📺</span>
+        <span>My Apps</span>
+      </button>
+      <button id="refreshBtn" class="icon-btn" title="Refresh live scores & schedule">
+        <span id="refreshIcon">↻</span>
+      </button>
+    </div>
+
+    <!-- Consolidated Filter Section: Row 1 Time, Row 2 Sports & Apps -->
+    <div class="filters-container">
+      <div id="timeFilterRail" class="filter-chips-wrap single-line-filters">
+        <button class="chip active" data-time="all">All</button>
+        <button class="chip live-chip" data-time="live">🔴 Live Now <span id="liveCountBadge" class="chip-count">0</span></button>
+        <button class="chip" data-time="upcoming">⏰ Upcoming</button>
+        <button class="chip" data-time="today">📅 Today</button>
+      </div>
+      <div class="filter-chips-wrap secondary-filters-row">
+        <button id="sportsFilterBtn" class="chip filter-trigger-chip" title="Filter by sport">
+          <span>🏆</span>
+          <span id="sportsFilterLabel">All Sports</span>
+          <span class="dropdown-arrow">▾</span>
+        </button>
+        <button id="appsFilterBtn" class="chip filter-trigger-chip" title="Filter by Roku app">
+          <span>📺</span>
+          <span id="appsFilterLabel">All Apps</span>
+          <span class="dropdown-arrow">▾</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Modal: Multi-Select Sports Filter -->
+  <div id="sportsModal" class="modal-backdrop">
+    <div class="modal-sheet">
+      <div class="sheet-header">
+        <div>
+          <div class="sheet-title">🏆 Filter by Sport</div>
+          <div style="font-size: 0.75rem; color: var(--text-secondary);">Select one or more sports</div>
+        </div>
+        <button class="close-sheet-btn" data-close="sportsModal">✕</button>
+      </div>
+      <div class="modal-multi-actions">
+        <button id="sportsSelectAllBtn" class="text-action-btn">Select All</button>
+        <button id="sportsClearBtn" class="text-action-btn">Reset</button>
+      </div>
+      <div id="sportsMultiList" class="multi-select-grid"></div>
+    </div>
+  </div>
+
+  <!-- Modal: Multi-Select Roku Apps Filter -->
+  <div id="appsModal" class="modal-backdrop">
+    <div class="modal-sheet">
+      <div class="sheet-header">
+        <div>
+          <div class="sheet-title">📺 Filter by Streaming App</div>
+          <div style="font-size: 0.75rem; color: var(--text-secondary);">Select one or more apps</div>
+        </div>
+        <button class="close-sheet-btn" data-close="appsModal">✕</button>
+      </div>
+      <div class="modal-multi-actions">
+        <button id="appsSelectAllBtn" class="text-action-btn">All Apps</button>
+        <button id="appsClearBtn" class="text-action-btn">Reset</button>
+      </div>
+      <div id="appsMultiList" class="multi-select-grid"></div>
+    </div>
+  </div>
+
+  <!-- Main Games Feed -->
+  <main id="gamesContainer" class="main-content">
+    <div class="empty-state">Loading live sports & Roku app channels...</div>
+  </main>
+
+  <!-- Bottom Quick Launch & Roku Remote Dock -->
+  <div class="bottom-dock">
+    <div class="dock-inner">
+      <div id="quickAppStrip" class="quick-app-strip"></div>
+      <button id="openRemoteBtn" class="remote-toggle-btn">
+        <span>🎮</span>
+        <span>Remote</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Modal 1: Roku TV Manager & App Setup -->
+  <div id="setupModal" class="modal-backdrop">
+    <div class="modal-sheet">
+      <div class="sheet-header">
+        <div class="sheet-title">📺 Roku TVs & Streaming Apps</div>
+        <button class="close-sheet-btn" data-close="setupModal">✕</button>
+      </div>
+
+      <!-- Active TV Card -->
+      <div id="activeTvCard" class="active-tv-card">
+        <div class="active-tv-header">
+          <div class="active-tv-title">
+            <span id="activeTvDot" class="status-dot"></span>
+            <span id="activeTvName" style="font-weight: 700;">No TV Connected</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <button id="modalWakeBtn" class="primary-btn" style="padding: 4px 10px; font-size: 0.72rem; display: none;">⚡ Power On</button>
+            <span id="activeTvBadge" class="tv-badge">Disconnected</span>
+          </div>
+        </div>
+        <div id="activeTvMeta" class="active-tv-meta">Select a TV below or add one by IP</div>
+        <div class="fast-start-tip" style="margin-top: 8px; font-size: 0.72rem; color: var(--text-secondary); line-height: 1.35; background: rgba(59, 130, 246, 0.08); padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.2);">
+          💡 <strong>Tip for waking TV when off:</strong> On your Roku TV, make sure <em>"Fast TV Start"</em> is enabled (<strong>Settings &gt; System &gt; Power &gt; Fast TV Start</strong>). This keeps the TV Wi-Fi chip awake so it can turn on instantly from this app.
+        </div>
+      </div>
+
+      <!-- Saved TVs List -->
+      <div class="section-subtitle">
+        <span>My TVs</span>
+        <span style="font-size: 0.72rem; color: var(--text-muted);">Tap to switch active TV</span>
+      </div>
+      <div id="savedTvsList" class="saved-tvs-list"></div>
+
+      <!-- Add / Discover TV Section -->
+      <div class="section-subtitle" style="margin-top: 14px;">Add a TV</div>
+      <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+        <button id="discoverTvBtn" class="primary-btn" style="flex: 1;">
+          🔍 Auto-Scan Wi-Fi for TVs
+        </button>
+      </div>
+
+      <div id="discoveredTvsContainer" style="display: none; margin-bottom: 12px;">
+        <div style="font-size: 0.76rem; color: var(--text-muted); margin-bottom: 6px;">Discovered on Wi-Fi:</div>
+        <div id="discoveredTvsList" class="discovered-tvs-list"></div>
+      </div>
+
+      <div class="input-group" style="margin-bottom: 6px;">
+        <input id="manualIpInput" type="text" placeholder="Roku TV IP (e.g. 192.168.1.45)" />
+        <input id="manualNameInput" type="text" placeholder="Nickname (e.g. Living Room TV)" style="max-width: 140px;" />
+        <button id="connectIpBtn" class="primary-btn">Connect</button>
+      </div>
+
+      <!-- iOS Installation Tip -->
+      <div class="ios-install-banner">
+        <div class="ios-install-icon">📱</div>
+        <div class="ios-install-text">
+          <strong>Use as an iOS App on your iPhone:</strong>
+          <span>Open this page in Safari, tap <strong>Share</strong> (⎋), then <strong>"Add to Home Screen"</strong> (➕). You'll get a full native app icon and experience!</span>
+        </div>
+      </div>
+
+      <hr style="border: none; border-top: 1px solid var(--border-subtle); margin: 14px 0;" />
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <div style="font-weight: 700; font-size: 0.92rem;">Your Streaming Apps</div>
+        <span style="font-size: 0.74rem; color: var(--text-muted);">Tap to prioritize on game cards</span>
+      </div>
+      <div id="appsChecklist" class="apps-checklist"></div>
+    </div>
+  </div>
+
+  <!-- Modal 2: Quick Roku TV Remote Sheet -->
+  <div id="remoteModal" class="modal-backdrop">
+    <div class="modal-sheet">
+      <div class="sheet-header">
+        <div>
+          <div class="sheet-title">🎮 Roku Remote</div>
+          <div id="remoteActiveAppLabel" style="font-size: 0.75rem; color: var(--text-secondary);"></div>
+        </div>
+        <button class="close-sheet-btn" data-close="remoteModal">✕</button>
+      </div>
+
+      <div class="remote-grid">
+        <div class="remote-row">
+          <button class="r-btn power-btn" data-key="PowerOn">⚡ Wake</button>
+          <button class="r-btn" data-key="Back">⬅ Back</button>
+          <button class="r-btn" data-key="Home">🏠 Home</button>
+        </div>
+
+        <div class="remote-row">
+          <button class="r-btn" data-key="Up">▲ Up</button>
+        </div>
+
+        <div class="remote-row">
+          <button class="r-btn" data-key="Left">◀ Left</button>
+          <button class="r-btn ok-btn" data-key="Select">OK</button>
+          <button class="r-btn" data-key="Right">Right ▶</button>
+        </div>
+
+        <div class="remote-row">
+          <button class="r-btn" data-key="Down">▼ Down</button>
+        </div>
+
+        <div class="remote-row">
+          <button class="r-btn" data-key="InstantReplay">↺ Replay</button>
+          <button class="r-btn" data-key="Play">⏯ Play</button>
+          <button class="r-btn" data-key="Info">✳ Options</button>
+        </div>
+
+        <div class="remote-row">
+          <button class="r-btn" data-key="VolumeDown">🔉 Vol -</button>
+          <button class="r-btn" data-key="VolumeMute">🔇 Mute</button>
+          <button class="r-btn" data-key="VolumeUp">🔊 Vol +</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 3: Voice Assistant Modal (Pulsing Recorder Indicator) -->
+  <div id="voiceModal" class="modal-backdrop">
+    <div class="modal-sheet voice-sheet">
+      <div class="sheet-header">
+        <div>
+          <div class="sheet-title">🎙️ Voice Assistant</div>
+          <div style="font-size: 0.75rem; color: var(--text-secondary);">Speak naturally — listening stops when you stop talking</div>
+        </div>
+        <button class="close-sheet-btn" data-close="voiceModal">✕</button>
+      </div>
+
+      <!-- Pulsing Recorder Indicator Section -->
+      <div class="voice-recorder-stage">
+        <div id="voiceOrb" class="voice-orb">
+          <div class="orb-ring ring-1"></div>
+          <div class="orb-ring ring-2"></div>
+          <div class="orb-core">
+            <span class="orb-mic">🎙️</span>
+          </div>
+        </div>
+
+        <div id="voiceLiveStatus" class="voice-live-status">Listening...</div>
+        <div id="voiceTranscriptPreview" class="voice-transcript-preview">Say something like "Turn TV on" or "Go to Knicks"...</div>
+      </div>
+
+      <!-- Example Prompts (Text-only guides) -->
+      <div class="voice-examples-section">
+        <div class="voice-examples-title">Example Voice Commands:</div>
+        <ul class="voice-examples-list">
+          <li><strong>"Turn TV on"</strong> or <strong>"Turn TV off"</strong></li>
+          <li><strong>"Go to Knicks game"</strong> or <strong>"Watch the Chiefs"</strong></li>
+          <li><strong>"Open ESPN"</strong> or <strong>"Launch Peacock"</strong></li>
+          <li><strong>"Mute TV"</strong> or <strong>"Volume up"</strong> / <strong>"Go Home"</strong></li>
+        </ul>
+      </div>
+
+      <!-- Direct Dictation Input (Enables iOS Keyboard Mic in Any Browser including Chrome) -->
+      <div id="voiceDirectInputSection" style="margin-top: 14px; width: 100%;">
+        <div style="font-size: 0.74rem; color: var(--text-secondary); margin-bottom: 6px; text-align: left;">
+          ⌨️ <strong>iPhone Dictation:</strong> Tap box &amp; press 🎙️ on iOS keyboard:
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <input
+            id="voiceDictationInput"
+            type="text"
+            placeholder="Say or type command (e.g. Knicks)..."
+            style="flex: 1; background: var(--bg-primary); border: 1px solid var(--border-subtle); color: var(--text-primary); border-radius: 10px; padding: 10px 12px; font-size: 0.88rem; outline: none;"
+          />
+          <button id="voiceDictationSubmitBtn" class="primary-btn" style="padding: 0 16px; font-weight: 700;">Go</button>
+        </div>
+      </div>
+
+      <!-- iOS Notice Card (visible when on iOS Chrome) -->
+      <div id="iosChromeNotice" style="display: none; margin-top: 12px; background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 12px; padding: 10px 12px; font-size: 0.78rem; line-height: 1.4; color: var(--text-secondary); text-align: left;">
+        💡 <strong>Hands-Free Tip:</strong> For 100% hands-free voice control without touching the keyboard mic, open this page in <strong>Safari</strong> (or tap Share ➔ Add to Home Screen).
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

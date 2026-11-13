@@ -1,0 +1,19 @@
+{
+  "name": "roku-sports-guide",
+  "version": "1.0.0",
+  "description": "Mobile PWA & local server to find live sports across Roku apps and switch channels in one tap",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "dependencies": {
+    "express": "^4.21.1",
+    "xml2js": "^0.6.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.2",
+    "@capacitor/core": "^8.6.2",
+    "@capacitor/ios": "^8.6.2"
+  }
+}
