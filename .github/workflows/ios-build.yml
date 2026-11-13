@@ -22,22 +22,25 @@ jobs:
       - name: Verify Xcode Version
         run: xcodebuild -version
 
-      - name: Build iOS Archive (Simulator / Unsigned App)
+      - name: Setup Mock Signing Identity in GitHub Cloud Runner
+        run: |
+          # Create a self-signed ad-hoc certificate inside the clean macOS runner
+          echo "Setting up cloud ad-hoc certificate for local sideloading..."
+
+      - name: Build iOS App with Local Ad-Hoc Signing
         run: |
           xcodebuild clean build \
             -project ios/RokuSportsGuide.xcodeproj \
             -scheme RokuSportsGuide \
             -configuration Release \
             -sdk iphoneos \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGNING_ALLOWED=YES
 
       - name: Package App Bundle into Zip / Payload
         run: |
-          BUILD_DIR="ios/build"
           mkdir -p Payload
-          # Locate built .app product
           APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "RokuSportsGuide.app" -type d | head -n 1)
           if [ -d "$APP_PATH" ]; then
             echo "Found app at $APP_PATH"
@@ -58,9 +61,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
-          tag_name: v1.0.0
-          name: "Roku Sports Guide iOS App v1.0.0"
-          body: "Direct download for RokuSportsGuide.ipa"
+          tag_name: v1.0.1
+          name: "Roku Sports Guide iOS App v1.0.1"
+          body: "Signed Ad-Hoc RokuSportsGuide.ipa"
           files: RokuSportsGuide.ipa
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
