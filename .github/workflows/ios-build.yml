@@ -22,21 +22,16 @@ jobs:
       - name: Verify Xcode Version
         run: xcodebuild -version
 
-      - name: Setup Mock Signing Identity in GitHub Cloud Runner
-        run: |
-          # Create a self-signed ad-hoc certificate inside the clean macOS runner
-          echo "Setting up cloud ad-hoc certificate for local sideloading..."
-
-      - name: Build iOS App with Local Ad-Hoc Signing
+      - name: Build iOS Archive (Unsigned App)
         run: |
           xcodebuild clean build \
             -project ios/RokuSportsGuide.xcodeproj \
             -scheme RokuSportsGuide \
             -configuration Release \
             -sdk iphoneos \
-            CODE_SIGN_IDENTITY="-" \
-            CODE_SIGNING_REQUIRED=YES \
-            CODE_SIGNING_ALLOWED=YES
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Package App Bundle into Zip / Payload
         run: |
