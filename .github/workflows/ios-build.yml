@@ -50,3 +50,14 @@ jobs:
         with:
           name: RokuSportsGuide-iOS-App
           path: RokuSportsGuide.ipa
+
+      - name: Create GitHub Release with .ipa Download
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        with:
+          tag_name: v1.0.0
+          name: "Roku Sports Guide iOS App v1.0.0"
+          body: "Direct download for RokuSportsGuide.ipa"
+          files: RokuSportsGuide.ipa
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
