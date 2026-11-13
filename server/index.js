@@ -16,6 +16,7 @@ const {
   getInstalledApps,
   getActiveApp,
   resolveAppsCatalog,
+  getRokuEndpoint,
   launchRokuApp,
   sendKeypress,
   fetchWithTimeout,
@@ -241,7 +242,8 @@ app.get('/api/roku/icon/:appId', async (req, res) => {
   }
 
   try {
-    const iconRes = await fetchWithTimeout(`http://${targetIp}:8060/query/icon/${encodeURIComponent(appId)}`, {}, 2000);
+    const iconUrl = getRokuEndpoint(targetIp, `/query/icon/${encodeURIComponent(appId)}`);
+    const iconRes = await fetchWithTimeout(iconUrl, {}, 2000);
     if (!iconRes.ok) {
       return res.status(404).end();
     }

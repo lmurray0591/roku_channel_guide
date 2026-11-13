@@ -653,9 +653,19 @@ function getLastQueryError() {
   return lastQueryError;
 }
 
+function getRokuEndpoint(ip, path) {
+  const tunnel = process.env.ROKU_TUNNEL_URL || process.env.ROKU_PUBLIC_URL;
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  if (tunnel) {
+    const base = tunnel.replace(/\/+$/, '');
+    return `${base}${cleanPath}`;
+  }
+  return `http://${ip}:8060${cleanPath}`;
+}
+
 async function queryDeviceInfo(ip, timeoutMs = 1500) {
   try {
-    const res = await fetchWithTimeout(`http://${ip}:8060/query/device-info`, {}, timeoutMs);
+    const res = await fetchWithTimeout(getRokuEndpoint(ip, '/query/device-info'), {}, timeoutMs);
     if (!res.ok) {
       lastQueryError = `HTTP ${res.status}`;
       return null;
@@ -772,7 +782,7 @@ async function wakeRokuTv(ip) {
 
   // 2. Send ECP PowerOn keypress (works immediately if TV is in fast start / standby)
   try {
-    await fetchWithTimeout(`http://${ip}:8060/keypress/PowerOn`, { method: 'POST' }, 1200);
+    await fetchWithTimeout(getRokuEndpoint(ip, '/keypress/PowerOn'), { method: 'POST' }, 1200);
   } catch {}
 
   // 3. Poll for up to 4.5 seconds for the TV to respond
@@ -787,7 +797,7 @@ async function wakeRokuTv(ip) {
     // Repeat PowerOn keypress once during wake loop
     if (Date.now() - startTime > 1500) {
       try {
-        await fetchWithTimeout(`http://${ip}:8060/keypress/PowerOn`, { method: 'POST' }, 1000);
+        await fetchWithTimeout(getRokuEndpoint(ip, '/keypress/PowerOn'), { method: 'POST' }, 1000);
       } catch {}
     }
   }
@@ -960,7 +970,7 @@ async function discoverRokuDevices() {
 async function getInstalledApps(ip) {
   if (!ip) return [];
   try {
-    const res = await fetchWithTimeout(`http://${ip}:8060/query/apps`, {}, 2500);
+    const res = await fetchWithTimeout(getRokuEndpoint(ip, '/query/apps'), {}, 2500);
     if (!res.ok) return [];
     const xml = await res.text();
     const parsed = await parseStringPromise(xml, { explicitArray: false });
@@ -984,7 +994,7 @@ async function getInstalledApps(ip) {
 async function getActiveApp(ip) {
   if (!ip) return null;
   try {
-    const res = await fetchWithTimeout(`http://${ip}:8060/query/active-app`, {}, 1500);
+    const res = await fetchWithTimeout(getRokuEndpoint(ip, '/query/active-app'), {}, 1500);
     if (!res.ok) return null;
     const xml = await res.text();
     const parsed = await parseStringPromise(xml, { explicitArray: false });
@@ -1003,7 +1013,7 @@ async function getActiveApp(ip) {
 async function queryMediaPlayer(ip) {
   if (!ip) return null;
   try {
-    const res = await fetchWithTimeout(`http://${ip}:8060/query/media-player`, {}, 1500);
+    const res = await fetchWithTimeout(getRokuEndpoint(ip, '/query/media-player'), {}, 1500);
     if (!res.ok) return null;
     const xml = await res.text();
     const parsed = await parseStringPromise(xml, { explicitArray: false });
@@ -1119,9 +1129,9 @@ async function launchRokuApp(ip, appId) {
     // In Roku OS, pressing "Back" twice navigates out of any sub-screen/video player
     // back to the top-level main/home menu of the application without cold restarting it.
     try {
-      await fetchWithTimeout(`http://${ip}:8060/keypress/Back`, { method: 'POST' }, 1200);
+      await fetchWithTimeout(getRokuEndpoint(ip, '/keypress/Back'), { method: 'POST' }, 1200);
       await sleep(250);
-      await fetchWithTimeout(`http://${ip}:8060/keypress/Back`, { method: 'POST' }, 1200);
+      await fetchWithTimeout(getRokuEndpoint(ip, '/keypress/Back'), { method: 'POST' }, 1200);
     } catch {}
 
     return {
@@ -1134,7 +1144,7 @@ async function launchRokuApp(ip, appId) {
   }
 
   // 3. App is not open yet; launch it directly
-  const url = `http://${ip}:8060/launch/${encodeURIComponent(appId)}`;
+  const url = getRokuEndpoint(ip, `/launch/${encodeURIComponent(appId)}`);
   const res = await fetchWithTimeout(url, { method: 'POST' }, 2500);
   if (!res.ok && res.status !== 204) {
     throw new Error(`Roku TV returned HTTP ${res.status} when launching app ${appId}`);
@@ -1149,7 +1159,7 @@ async function launchRokuApp(ip, appId) {
 }
 
 async function sendKeypress(ip, key) {
-  if (!ip) {
+  if (!ip && !process.env.ROKU_TUNNEL_URL && !process.env.ROKU_PUBLIC_URL) {
     throw new Error('No Roku TV IP configured.');
   }
   const allowedKeys = new Set([
@@ -1161,7 +1171,7 @@ async function sendKeypress(ip, key) {
   if (!allowedKeys.has(key)) {
     throw new Error(`Unsupported remote key: ${key}`);
   }
-  const url = `http://${ip}:8060/keypress/${encodeURIComponent(key)}`;
+  const url = getRokuEndpoint(ip, `/keypress/${encodeURIComponent(key)}`);
   const res = await fetchWithTimeout(url, { method: 'POST' }, 2000);
   return { ok: res.ok || res.status === 204 };
 }
@@ -1181,6 +1191,7 @@ module.exports = {
   getActiveApp,
   queryMediaPlayer,
   resolveAppsCatalog,
+  getRokuEndpoint,
   launchRokuApp,
   sendKeypress,
   fetchWithTimeout,
