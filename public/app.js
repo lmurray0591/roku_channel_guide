@@ -854,7 +854,15 @@ async function sendDirectToRoku(endpoint) {
   const tvIp = localStorage.getItem('roku_direct_tv_ip') || state.activeTvIp || '192.168.1.8';
   const url = `http://${tvIp}:8060${endpoint}`;
 
-  // Method 1: Fetch with mode 'no-cors' (Supported directly in mobile browsers to local IP)
+  // Method 1: If running inside Scriptable native iOS wrapper, use native iOS networking
+  if (typeof window.rokuNativeBridge === 'function') {
+    try {
+      window.rokuNativeBridge(url);
+      return true;
+    } catch {}
+  }
+
+  // Method 2: Fetch with mode 'no-cors' (Works cleanly without security popups when page is HTTP or local)
   try {
     await fetch(url, {
       method: 'POST',
@@ -863,29 +871,8 @@ async function sendDirectToRoku(endpoint) {
     });
     return true;
   } catch (fetchErr) {
-    console.warn('Direct fetch attempt failed, using form-POST fallback:', fetchErr);
-  }
-
-  // Method 2: Standard form submission target iframe fallback (Bypasses CORS restrictions)
-  try {
-    let iframe = document.getElementById('rokuDirectFrame');
-    if (!iframe) {
-      iframe = document.createElement('iframe');
-      iframe.id = 'rokuDirectFrame';
-      iframe.name = 'rokuDirectFrame';
-      iframe.style.display = 'none';
-      document.body.appendChild(iframe);
-    }
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = url;
-    form.target = 'rokuDirectFrame';
-    document.body.appendChild(form);
-    form.submit();
-    setTimeout(() => form.remove(), 1000);
-    return true;
-  } catch (e) {
-    console.error('All direct iPhone-to-Roku methods failed:', e);
+    console.warn('Direct fetch blocked by HTTPS mixed-content:', fetchErr);
+    showToast('⚠️ Open via Scriptable App or HTTP URL for direct Wi-Fi TV control');
     return false;
   }
 }
