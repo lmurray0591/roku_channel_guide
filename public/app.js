@@ -854,15 +854,13 @@ async function sendDirectToRoku(endpoint) {
   const tvIp = localStorage.getItem('roku_direct_tv_ip') || state.activeTvIp || '192.168.1.8';
   const url = `http://${tvIp}:8060${endpoint}`;
 
-  // Method 1: If running inside Scriptable native iOS wrapper, use native iOS networking
-  if (typeof window.rokuNativeBridge === 'function') {
-    try {
-      window.rokuNativeBridge(url);
-      return true;
-    } catch {}
+  // Trigger Scriptable's shouldAllowRequest interceptor directly
+  if (window.location.search.includes('scriptable=1') || typeof window.rokuNativeBridge === 'function') {
+    window.location.href = `scriptable-roku://${encodeURIComponent(url)}`;
+    return true;
   }
 
-  // Method 2: Fetch with mode 'no-cors' (Works cleanly without security popups when page is HTTP or local)
+  // Fallback for standard local HTTP or Scriptable without query param
   try {
     await fetch(url, {
       method: 'POST',
@@ -871,9 +869,9 @@ async function sendDirectToRoku(endpoint) {
     });
     return true;
   } catch (fetchErr) {
-    console.warn('Direct fetch blocked by HTTPS mixed-content:', fetchErr);
-    showToast('⚠️ Open via Scriptable App or HTTP URL for direct Wi-Fi TV control');
-    return false;
+    // If fetch was blocked by HTTPS mixed-content, emit scriptable-roku:// scheme
+    window.location.href = `scriptable-roku://${encodeURIComponent(url)}`;
+    return true;
   }
 }
 
