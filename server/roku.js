@@ -632,10 +632,14 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
     ? Math.max(timeoutMs, 4000)
     : timeoutMs;
 
-  // On macOS 15+, non-platform Node binaries can receive EHOSTUNREACH on LAN sockets
+  // On macOS (not iOS sandbox), non-platform Node binaries can receive EHOSTUNREACH on LAN sockets
   // due to Local Network Privacy restrictions, whereas /usr/bin/curl succeeds.
-  if (process.platform === 'darwin' && /^http:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(url)) {
-    return curlFetch(url, options, effectiveTimeout);
+  // In iOS sandboxes (e.g. a-Shell), execFile is blocked (EPERM), so use native fetch directly.
+  const isIOS = process.platform === 'darwin' && os.cpus().length > 0 && typeof process.getuid === 'function' && process.getuid() === 501 && !fs.existsSync('/bin/bash');
+  if (process.platform === 'darwin' && !isIOS && /^http:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(url)) {
+    try {
+      return await curlFetch(url, options, effectiveTimeout);
+    } catch {}
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), effectiveTimeout);
@@ -829,18 +833,22 @@ async function wakeRokuTv(ip) {
 
 function getArpCandidateIps() {
   return new Promise((resolve) => {
-    execFile('/usr/sbin/arp', ['-an'], { timeout: 1500 }, (err, stdout) => {
-      if (err || !stdout) return resolve([]);
-      const ips = [];
-      for (const line of stdout.split(/\r?\n/)) {
-        if (line.includes('(incomplete)')) continue;
-        const m = line.match(/\((\d+\.\d+\.\d+\.\d+)\)\s+at\s+([0-9a-f:]+)/i);
-        if (m && m[2] !== 'ff:ff:ff:ff:ff:ff') {
-          ips.push(m[1]);
+    try {
+      execFile('/usr/sbin/arp', ['-an'], { timeout: 1500 }, (err, stdout) => {
+        if (err || !stdout) return resolve([]);
+        const ips = [];
+        for (const line of stdout.split(/\r?\n/)) {
+          if (line.includes('(incomplete)')) continue;
+          const m = line.match(/\((\d+\.\d+\.\d+\.\d+)\)\s+at\s+([0-9a-f:]+)/i);
+          if (m && m[2] !== 'ff:ff:ff:ff:ff:ff') {
+            ips.push(m[1]);
+          }
         }
-      }
-      resolve(ips);
-    });
+        resolve(ips);
+      });
+    } catch {
+      resolve([]);
+    }
   });
 }
 
