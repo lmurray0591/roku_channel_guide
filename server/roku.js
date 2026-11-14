@@ -640,7 +640,16 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), effectiveTimeout);
   try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
+    const targetTvIp = process.env.ROKU_TV_IP || '192.168.1.8';
+    const mergedHeaders = {
+      'Host': `${targetTvIp}:8060`,
+      ...(options.headers || {})
+    };
+    const res = await fetch(url, {
+      ...options,
+      headers: mergedHeaders,
+      signal: controller.signal
+    });
     return res;
   } catch (err) {
     if (process.platform === 'darwin') {
