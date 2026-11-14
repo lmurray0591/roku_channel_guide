@@ -515,7 +515,237 @@ async function getSportsGuideData({ installedApps = [], enabledAppKeys = [], for
   };
 }
 
+// Cache for ESPN event boxscores so repeated player questions are fast
+const boxscoreCache = new Map();
+
+async function fetchEventBoxscore(league, eventId) {
+  const cacheKey = `${league.id}:${eventId}`;
+  const now = Date.now();
+  if (boxscoreCache.has(cacheKey)) {
+    const cached = boxscoreCache.get(cacheKey);
+    if (now - cached.timestamp < 30000) return cached.data;
+  }
+
+  try {
+    // Convert scoreboard URL to summary URL
+    const baseUrl = league.url.split('/scoreboard')[0];
+    const summaryUrl = `${baseUrl}/summary?event=${encodeURIComponent(eventId)}`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(summaryUrl, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const data = await res.json();
+    boxscoreCache.set(cacheKey, { timestamp: now, data });
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function parseAthleteFromBoxscore(summaryData, queryWords) {
+  const playersGroups = summaryData?.boxscore?.players || [];
+  let bestMatch = null;
+  const nonNameLeadWords = new Set([
+    'does', 'did', 'has', 'have', 'how', 'many', 'points', 'rebounds', 'assists',
+    'yards', 'goals', 'stats', 'for', 'about', 'is', 'what', 'who', 'in', 'on', 'the', 'and'
+  ]);
+
+  for (const teamGroup of playersGroups) {
+    const teamName = teamGroup.team?.displayName || teamGroup.team?.name || '';
+    const statCategories = teamGroup.statistics || [];
+
+    for (const cat of statCategories) {
+      const labels = cat.labels || [];
+      const catName = cat.name || '';
+      const athletes = cat.athletes || [];
+
+      for (const entry of athletes) {
+        const ath = entry.athlete || {};
+        const fullName = (ath.displayName || '').toLowerCase();
+        if (!fullName) continue;
+
+        const nameParts = fullName.split(/\s+/);
+        const firstName = nameParts[0];
+        const lastName = nameParts[nameParts.length - 1];
+
+        const isFullMatch = queryWords.includes(fullName);
+        let isLastMatch = false;
+        if (!isFullMatch && lastName.length >= 4) {
+          const lastRegex = new RegExp(`(?:^|\\s)([a-z0-9']+\\s+)?\\b${lastName}\\b`, 'i');
+          const m = queryWords.match(lastRegex);
+          if (m) {
+            const precedingWord = (m[1] || '').trim().toLowerCase();
+            // Only accept a last-name-only match if the preceding word is a question/filler word (e.g., "does Brunson have")
+            if (!precedingWord || nonNameLeadWords.has(precedingWord) || precedingWord === firstName) {
+              isLastMatch = true;
+            }
+          }
+        }
+
+        if (isFullMatch || isLastMatch) {
+          const statsArr = entry.stats || [];
+          const statPairs = [];
+          for (let i = 0; i < labels.length && i < statsArr.length; i++) {
+            statPairs.push({ label: labels[i], value: statsArr[i] });
+          }
+          bestMatch = {
+            name: ath.displayName,
+            team: teamName,
+            position: ath.position?.abbreviation || '',
+            didNotPlay: Boolean(entry.didNotPlay),
+            reason: entry.reason || '',
+            category: catName,
+            statPairs
+          };
+          if (isFullMatch) return bestMatch;
+        }
+      }
+    }
+  }
+  return bestMatch;
+}
+
+function formatAthleteStatAnswer(match, game) {
+  const scoreSummary = `${game.awayTeam.shortName} ${game.awayTeam.score ?? 0}, ${game.homeTeam.shortName} ${game.homeTeam.score ?? 0} (${game.statusText})`;
+  if (match.didNotPlay) {
+    return `${match.name} (${match.team}) has not played (${match.reason || 'DNP'}). Score: ${scoreSummary}.`;
+  }
+  if (!match.statPairs || match.statPairs.length === 0) {
+    return `${match.name} is active for the ${match.team}, but has no recorded stats yet. Score: ${scoreSummary}.`;
+  }
+
+  const statMap = {};
+  for (const p of match.statPairs) {
+    statMap[p.label.toUpperCase()] = p.value;
+  }
+
+  // Basketball formatting (PTS, REB, AST, FG, 3PT, MIN)
+  if (statMap.PTS !== undefined) {
+    const pts = statMap.PTS;
+    const reb = statMap.REB ?? '0';
+    const ast = statMap.AST ?? '0';
+    const fg = statMap.FG ? ` (${statMap.FG} FG)` : '';
+    const min = statMap.MIN ? ` in ${statMap.MIN} MIN` : '';
+    return `🏀 ${match.name} (${match.team}) has ${pts} points, ${reb} rebounds, and ${ast} assists${fg}${min}. [${scoreSummary}]`;
+  }
+
+  // Football formatting (C/ATT, YDS, TD, INT, CAR)
+  if (statMap['C/ATT'] !== undefined) {
+    return `🏈 ${match.name} (${match.team}) is ${statMap['C/ATT']} for ${statMap.YDS || 0} passing yards, ${statMap.TD || 0} TD, ${statMap.INT || 0} INT. [${scoreSummary}]`;
+  }
+  if (statMap.CAR !== undefined) {
+    return `🏈 ${match.name} (${match.team}) has ${statMap.CAR} carries for ${statMap.YDS || 0} rushing yards and ${statMap.TD || 0} TD. [${scoreSummary}]`;
+  }
+  if (statMap.REC !== undefined) {
+    return `🏈 ${match.name} (${match.team}) has ${statMap.REC} catches for ${statMap.YDS || 0} receiving yards and ${statMap.TD || 0} TD. [${scoreSummary}]`;
+  }
+
+  // Generic stat summary
+  const topStats = match.statPairs.slice(0, 5).map((s) => `${s.value} ${s.label}`).join(', ');
+  return `📊 ${match.name} (${match.team}): ${topStats}. [${scoreSummary}]`;
+}
+
+async function answerSportsQuestion(rawQuery, installedApps = [], enabledAppKeys = []) {
+  const q = String(rawQuery || '').trim();
+  const lower = q.toLowerCase();
+
+  const guide = await getSportsGuideData({ installedApps, enabledAppKeys, forceRefresh: false });
+  const games = guide.games || [];
+
+  // 1. Check if query mentions a specific team
+  const teamMatchedGames = games.filter((g) => {
+    const away = `${g.awayTeam.name} ${g.awayTeam.shortName} ${g.awayTeam.abbreviation}`.toLowerCase();
+    const home = `${g.homeTeam.name} ${g.homeTeam.shortName} ${g.homeTeam.abbreviation}`.toLowerCase();
+    const words = lower.replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter((w) => w.length >= 3);
+    const stopWords = new Set(['the', 'and', 'for', 'has', 'have', 'any', 'how', 'many', 'points', 'score', 'game', 'what', 'who', 'winning', 'playing', 'channel', 'watch', 'does', 'did']);
+    return words.some((w) => !stopWords.has(w) && (away.includes(w) || home.includes(w)));
+  });
+
+  // Candidate games to inspect boxscores for (prioritize team-matched games, then major pro live/final games)
+  const seenIds = new Set();
+  const candidateGames = [];
+  const proLeagues = new Set(['nba', 'nfl', 'nhl', 'mlb']);
+  const sortedActiveOrFinal = games
+    .filter((x) => x.isLive || x.isFinal)
+    .sort((a, b) => (proLeagues.has(b.leagueId) ? 1 : 0) - (proLeagues.has(a.leagueId) ? 1 : 0));
+
+  for (const g of [...teamMatchedGames, ...sortedActiveOrFinal]) {
+    if (!seenIds.has(g.id) && candidateGames.length < 18) {
+      seenIds.add(g.id);
+      candidateGames.push(g);
+    }
+  }
+
+  // 2. If query asks about player stats / points / yards / rebounds / assists / goals / or "does [Name] have"
+  const isPlayerStatQuestion = /\b(points|pts|rebounds|reb|assists|ast|yards|yds|touchdowns|tds|goals|stats|scoring|how many|does .* have|did .* score)\b/i.test(lower);
+
+  if (isPlayerStatQuestion || candidateGames.length > 0) {
+    const boxResults = await Promise.all(
+      candidateGames.map(async (g) => {
+        const leagueObj = LEAGUES.find((l) => l.id === g.leagueId);
+        if (!leagueObj) return null;
+        const summary = await fetchEventBoxscore(leagueObj, g.espnId || g.id);
+        if (!summary) return null;
+        const match = parseAthleteFromBoxscore(summary, lower);
+        return match ? { match, game: g } : null;
+      })
+    );
+
+    const foundPlayer = boxResults.find(Boolean);
+    if (foundPlayer) {
+      return {
+        answer: formatAthleteStatAnswer(foundPlayer.match, foundPlayer.game),
+        game: foundPlayer.game
+      };
+    }
+  }
+
+  // 3. If it matched a team's game, answer with the live score, clock, broadcast channel, or player unavailable note
+  if (teamMatchedGames.length > 0) {
+    const g = teamMatchedGames[0];
+    const channelStr = g.networks?.length ? ` airing on ${g.networks.join(', ')}` : '';
+    if (isPlayerStatQuestion) {
+      const scoreInfo = g.isUpcoming
+        ? `${g.awayTeam.shortName} vs ${g.homeTeam.shortName} starts at ${g.statusText}${channelStr}.`
+        : `${g.awayTeam.shortName} ${g.awayTeam.score ?? 0}, ${g.homeTeam.shortName} ${g.homeTeam.score ?? 0} (${g.statusText})${channelStr}.`;
+      return {
+        answer: `I couldn't find that player in the ${g.awayTeam.shortName} vs ${g.homeTeam.shortName} boxscore. Current game status: ${scoreInfo}`,
+        game: g
+      };
+    }
+
+    if (g.isUpcoming) {
+      return {
+        answer: `${g.icon} ${g.awayTeam.name} at ${g.homeTeam.name} is scheduled for ${g.statusText}${channelStr}.`,
+        game: g
+      };
+    }
+    return {
+      answer: `${g.icon} ${g.awayTeam.name} ${g.awayTeam.score ?? 0}, ${g.homeTeam.name} ${g.homeTeam.score ?? 0} (${g.statusText})${channelStr}.`,
+      game: g
+    };
+  }
+
+  // 4. General live games summary
+  const liveGames = games.filter((g) => g.isLive);
+  if (liveGames.length > 0) {
+    const topLive = liveGames.slice(0, 3).map((g) => `${g.awayTeam.shortName} ${g.awayTeam.score}-${g.homeTeam.score} ${g.homeTeam.shortName}`).join(' • ');
+    return {
+      answer: `There are ${liveGames.length} live games right now: ${topLive}. Ask me about any team or player!`,
+      game: null
+    };
+  }
+
+  return {
+    answer: `I couldn't find an active game matching "${q}". Try asking about a team on today's schedule or say "Watch ESPN".`,
+    game: null
+  };
+}
+
 module.exports = {
   LEAGUES,
-  getSportsGuideData
+  getSportsGuideData,
+  answerSportsQuestion
 };
+

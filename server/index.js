@@ -23,7 +23,7 @@ const {
   getLastQueryError,
   wakeRokuTv
 } = require('./roku');
-const { getSportsGuideData } = require('./sports');
+const { getSportsGuideData, answerSportsQuestion } = require('./sports');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -335,6 +335,24 @@ app.get('/api/guide', async (req, res) => {
       forceRefresh
     });
     res.json(guide);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/assistant', async (req, res) => {
+  try {
+    const query = String(req.body.query || '').trim();
+    if (!query) {
+      return res.status(400).json({ error: 'Missing query' });
+    }
+    const cfg = loadConfig();
+    const result = await answerSportsQuestion(
+      query,
+      cfg.cachedInstalledApps || [],
+      cfg.enabledAppKeys || []
+    );
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

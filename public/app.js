@@ -1196,9 +1196,8 @@ function createSpeechRecognizer() {
           els.voiceTranscriptPreview.style.color = '#ffffff';
         }
         setTimeout(() => {
-          els.voiceModal?.classList.remove('open');
           handleVoiceCommand(cmd);
-        }, 400);
+        }, 250);
       } else {
         if (els.voiceTranscriptPreview) {
           els.voiceTranscriptPreview.textContent = 'No speech detected. Tap microphone to try again.';
@@ -1213,12 +1212,12 @@ function createSpeechRecognizer() {
 
       if (e.error === 'not-allowed') {
         if (els.voiceTranscriptPreview) {
-          els.voiceTranscriptPreview.innerHTML = '⚠️ Microphone access is blocked.<br><span style="font-size:0.75rem;color:var(--text-secondary);">Click the lock/settings icon in your Chrome address bar and set <strong>Microphone</strong> to <strong>Allow</strong>.</span>';
+          els.voiceTranscriptPreview.innerHTML = '⚠️ Microphone access is blocked.<br><span style="font-size:0.75rem;color:var(--text-secondary);">Click the lock/settings icon in your address bar and set <strong>Microphone</strong> to <strong>Allow</strong>.</span>';
         }
         showToast('🎙️ Microphone access blocked by browser');
       } else if (e.error === 'network') {
         if (els.voiceTranscriptPreview) {
-          els.voiceTranscriptPreview.innerHTML = '⚠️ Chrome Web Speech requires an internet connection or secure origin.<br><span style="font-size:0.75rem;color:var(--text-secondary);">If accessing via LAN IP on Chrome, Chrome restricts speech recognition to HTTPS or localhost. Try accessing via <strong>localhost:3000</strong> on this Mac or enable Chrome insecure origins flag.</span>';
+          els.voiceTranscriptPreview.innerHTML = '⚠️ Speech recognition requires an internet connection or secure origin.';
         }
       } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
         if (els.voiceTranscriptPreview) {
@@ -1262,78 +1261,71 @@ function createSpeechRecognizer() {
   }
 }
 
-function initVoiceControl() {
+function startFreshSpeechRecording() {
+  currentSpeechTranscript = '';
+  const aiBox = document.getElementById('voiceAiAnswerBox');
+  if (aiBox) aiBox.style.display = 'none';
+
+  // Cleanly tear down any previous recognizer instance (Fixes iOS Safari 2nd-run bug!)
+  if (speechRecognizer) {
+    try {
+      speechRecognizer.onend = null;
+      speechRecognizer.onerror = null;
+      speechRecognizer.onresult = null;
+      speechRecognizer.abort();
+    } catch {}
+    speechRecognizer = null;
+  }
+
+  // Always instantiate a brand new SpeechRecognition object on each tap
   speechRecognizer = createSpeechRecognizer();
 
-  // Voice button click handler: Immediately opens visual modal and starts recording
+  if (speechRecognizer) {
+    if (els.voiceTranscriptPreview) {
+      els.voiceTranscriptPreview.textContent = 'Listening... Ask a question or say a TV command';
+      els.voiceTranscriptPreview.style.color = 'var(--text-muted)';
+    }
+    try {
+      speechRecognizer.start();
+    } catch (err) {
+      console.warn('SpeechRecognition start error:', err);
+    }
+  } else {
+    const ua = navigator.userAgent || '';
+    const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isIOSChrome = isIOS && /CriOS/i.test(ua);
+
+    const noticeEl = document.getElementById('iosChromeNotice');
+    if (noticeEl) {
+      noticeEl.style.display = isIOSChrome ? 'block' : 'none';
+    }
+
+    if (els.voiceTranscriptPreview) {
+      els.voiceTranscriptPreview.innerHTML = 'Tap the text box below and press 🎙️ on your iPhone keyboard to speak!';
+    }
+    if (els.voiceLiveStatus) {
+      els.voiceLiveStatus.textContent = 'Use Keyboard Mic Below';
+    }
+  }
+}
+
+function initVoiceControl() {
+  // Voice button click handler: Opens modal and starts a fresh recording session every time
   if (els.voiceBtn) {
     els.voiceBtn.addEventListener('click', () => {
-      currentSpeechTranscript = '';
       els.voiceModal?.classList.add('open');
-
-      if (!speechRecognizer) {
-        speechRecognizer = createSpeechRecognizer();
-      }
-
-      if (speechRecognizer) {
-        if (els.voiceTranscriptPreview) {
-          els.voiceTranscriptPreview.textContent = 'Listening... Say a command (e.g. "Turn TV on")';
-          els.voiceTranscriptPreview.style.color = 'var(--text-muted)';
-        }
-
-        try {
-          // CRITICAL FOR IOS SAFARI: Start synchronously within the user tap event!
-          speechRecognizer.start();
-        } catch (err) {
-          console.warn('SpeechRecognition immediate start error:', err);
-          try {
-            speechRecognizer.abort();
-            speechRecognizer.start();
-          } catch (e2) {
-            console.warn('SpeechRecognition retry error:', e2);
-          }
-        }
-      } else {
-        const ua = navigator.userAgent || '';
-        const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-        const isIOSChrome = isIOS && /CriOS/i.test(ua);
-
-        const noticeEl = document.getElementById('iosChromeNotice');
-        if (noticeEl) {
-          noticeEl.style.display = isIOSChrome ? 'block' : 'none';
-        }
-
-        if (isIOSChrome) {
-          els.voiceTranscriptPreview.innerHTML = '⚠️ Apple does not allow Chrome on iPhone to access speech recognition.<br><span style="font-size:0.8rem;color:var(--accent-blue);font-weight:600;">👉 Please open this address in Mobile Safari for voice control!</span>';
-        } else if (!window.isSecureContext && window.location.hostname !== 'localhost') {
-          els.voiceTranscriptPreview.innerHTML = '⚠️ Speech Recognition requires HTTPS or localhost.<br><span style="font-size:0.75rem;color:var(--text-secondary);">Open on this Mac at <code>http://localhost:3000</code> or open in Safari on iOS.</span>';
-        } else {
-          els.voiceTranscriptPreview.innerHTML = 'Speech recognition is not available in this browser. Please use Safari on iPhone or Chrome on Desktop.';
-        }
-
-        if (els.voiceLiveStatus) {
-          els.voiceLiveStatus.textContent = isIOSChrome ? 'Open in Safari' : 'Unavailable';
-        }
-      }
+      startFreshSpeechRecording();
     });
   }
 
-  // Allow clicking on the pulsing orb to restart recording if stopped
+  // Allow clicking on the pulsing orb to start a fresh recording session
   if (els.voiceOrb) {
     els.voiceOrb.addEventListener('click', () => {
-      if (!speechRecognizer) speechRecognizer = createSpeechRecognizer();
-      if (speechRecognizer) {
-        try {
-          speechRecognizer.abort();
-        } catch {}
-        setTimeout(() => {
-          try { speechRecognizer.start(); } catch {}
-        }, 100);
-      }
+      startFreshSpeechRecording();
     });
   }
 
-  // Direct dictation input for Chrome on iOS
+  // Direct dictation input for iOS Keyboard Mic / Typed questions
   const dictationInput = document.getElementById('voiceDictationInput');
   const dictationSubmitBtn = document.getElementById('voiceDictationSubmitBtn');
 
@@ -1341,8 +1333,11 @@ function initVoiceControl() {
     if (!dictationInput) return;
     const val = dictationInput.value.trim();
     if (val) {
-      els.voiceModal?.classList.remove('open');
       dictationInput.value = '';
+      if (els.voiceTranscriptPreview) {
+        els.voiceTranscriptPreview.textContent = `"${val}"`;
+        els.voiceTranscriptPreview.style.color = '#ffffff';
+      }
       handleVoiceCommand(val);
     }
   };
@@ -1353,19 +1348,78 @@ function initVoiceControl() {
   });
 }
 
+function speakAiResponse(text) {
+  if (!('speechSynthesis' in window)) return;
+  try {
+    window.speechSynthesis.cancel();
+    const cleanText = text.replace(/[\u{1F300}-\u{1F9FF}]/gu, '').replace(/\[.*?\]/g, '');
+    const utter = new SpeechSynthesisUtterance(cleanText);
+    utter.rate = 1.05;
+    window.speechSynthesis.speak(utter);
+  } catch {}
+}
+
+function showAiAnswerInModal(answerText) {
+  els.voiceModal?.classList.add('open');
+  const aiBox = document.getElementById('voiceAiAnswerBox');
+  const aiText = document.getElementById('voiceAiAnswerText');
+  if (aiBox && aiText) {
+    aiText.textContent = answerText;
+    aiBox.style.display = 'block';
+  }
+  if (els.voiceLiveStatus) {
+    els.voiceLiveStatus.textContent = 'Tap 🎙️ to ask another question';
+  }
+  speakAiResponse(answerText);
+}
+
+async function askAiSportsAssistant(queryText) {
+  if (els.voiceLiveStatus) {
+    els.voiceLiveStatus.textContent = '🤖 Checking live ESPN boxscores...';
+  }
+  try {
+    const res = await fetch('/api/assistant', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: queryText })
+    });
+    const data = await res.json();
+    const answer = data.answer || `I couldn't find stats for "${queryText}".`;
+    showAiAnswerInModal(answer);
+    showToast(answer);
+  } catch (err) {
+    showAiAnswerInModal(`Could not reach AI Sports Assistant: ${err.message}`);
+  }
+}
+
 async function handleVoiceCommand(rawTranscript) {
   const text = rawTranscript.trim();
   const lower = text.toLowerCase();
   showToast(`🎙️ "${text}"`);
 
+  // 0. Check if the user is asking a Question / Player Stat / Score Query!
+  // Examples: "Does Michael Jordan have any points in the Bulls game?", "How many points does Brunson have?", "What is the score of the Knicks game?", "Who is winning..."
+  const isQuestion = /^(does|do|did|how\s+many|what|what's|whats|who|who's|whos|is|are|has|have|can\s+you\s+tell|tell\s+me)\b/i.test(lower) ||
+    /\b(points|rebounds|assists|yards|touchdowns|goals|stats|score|winning|losing|halftime|quarter)\b/i.test(lower) ||
+    text.endsWith('?');
+
+  const isExplicitTvAction = /^(please\s+)?(go\s+to|watch|put\s+on|turn\s+to|tune\s+to|switch\s+to|open|launch|turn\s+on|turn\s+off|mute|unmute|volume)\b/i.test(lower);
+
+  if (isQuestion && !isExplicitTvAction) {
+    await askAiSportsAssistant(text);
+    return;
+  }
+
   // 1. Power On / Wake Commands
   if (/\b(turn\s+on|power\s+on|wake|switch\s+on)\b/i.test(lower) && /\b(tv|television|roku)\b/i.test(lower)) {
+    els.voiceModal?.classList.remove('open');
     await powerOnTv();
     return;
   }
 
   // 2. Power Off Commands
   if (/\b(turn\s+off|power\s+off|shut\s+down|sleep)\b/i.test(lower) && /\b(tv|television|roku)\b/i.test(lower)) {
+    els.voiceModal?.classList.remove('open');
     showToast('😴 Turning TV off...');
     await sendRemoteKey('PowerOff');
     setTimeout(fetchStatus, 1500);
@@ -1374,23 +1428,27 @@ async function handleVoiceCommand(rawTranscript) {
 
   // 3. Remote Control navigation commands
   if (/\b(mute|unmute)\b/i.test(lower)) {
+    els.voiceModal?.classList.remove('open');
     return sendRemoteKey('VolumeMute');
   }
   if (/\b(volume\s+up|louder)\b/i.test(lower)) {
+    els.voiceModal?.classList.remove('open');
     return sendRemoteKey('VolumeUp');
   }
   if (/\b(volume\s+down|quieter|lower)\b/i.test(lower)) {
+    els.voiceModal?.classList.remove('open');
     return sendRemoteKey('VolumeDown');
   }
   if (/\b(home|home\s+screen)\b/i.test(lower)) {
+    els.voiceModal?.classList.remove('open');
     return sendRemoteKey('Home');
   }
   if (/\b(play|pause)\b/i.test(lower)) {
+    els.voiceModal?.classList.remove('open');
     return sendRemoteKey('Play');
   }
 
   // 4. Team / Game Commands ("go to the Knicks game", "watch the Chiefs", "put on Arsenal")
-  // Extract subject after "go to", "watch", "put on", "turn to", "tune to", "open the"
   let targetQuery = lower
     .replace(/^(please\s+)?(go\s+to|watch|put\s+on|turn\s+to|tune\s+to|switch\s+to|play|open)\s+(the\s+)?/i, '')
     .replace(/\s+(game|match|matchup|stream|broadcast)$/i, '')
@@ -1428,28 +1486,26 @@ async function handleVoiceCommand(rawTranscript) {
     const matchTitle = `${matchedGame.awayTeam.abbreviation || matchedGame.awayTeam.name} vs ${matchedGame.homeTeam.abbreviation || matchedGame.homeTeam.name}`;
 
     if (appToLaunch) {
+      els.voiceModal?.classList.remove('open');
       showToast(`🎯 Found game: ${matchTitle}! Opening ${appToLaunch.shortLabel} on TV...`);
       await launchAppOnTv(appToLaunch.rokuId, appToLaunch.shortLabel);
       return;
     } else {
-      showToast(`Found ${matchTitle} (${matchedGame.broadcast || 'No channel listed'})`);
+      showAiAnswerInModal(`Found ${matchTitle} (${matchedGame.statusText}), but no streaming app is listed.`);
       return;
     }
   }
 
   // If matched a direct app
   if (directApp) {
+    els.voiceModal?.classList.remove('open');
     showToast(`🚀 Opening ${directApp.shortLabel} on Roku TV...`);
     await launchAppOnTv(directApp.rokuId, directApp.shortLabel);
     return;
   }
 
-  // Fallback: Apply query as search filter in UI
-  showToast(`🔍 Searching guide for "${text}"`);
-  els.searchInput.value = text;
-  state.searchQuery = text;
-  els.clearSearchBtn.style.display = 'block';
-  renderGames();
+  // 5. Fallback: Ask the AI Sports Assistant!
+  await askAiSportsAssistant(text);
 }
 
 // Bind Power & Wake buttons
