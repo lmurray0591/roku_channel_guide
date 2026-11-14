@@ -780,6 +780,15 @@ async function launchAppOnTv(appId, appName) {
     els.remoteModal.classList.add('open');
   }
 
+  // Check if user enabled Direct iPhone Shortcut mode or if we are on Render
+  const directShortcutEnabled = localStorage.getItem('roku_use_shortcuts') === 'true';
+  const targetTvIp = localStorage.getItem('roku_direct_tv_ip') || '192.168.1.8';
+
+  if (directShortcutEnabled) {
+    executeIosShortcutCommand('launch', appId, targetTvIp);
+    return;
+  }
+
   try {
     const res = await fetch('/api/roku/launch', {
       method: 'POST',
@@ -791,6 +800,11 @@ async function launchAppOnTv(appId, appName) {
     });
     const data = await res.json();
     if (!res.ok) {
+      if (res.status === 403 || (data.error && data.error.includes('403'))) {
+        showToast(`💡 Switch to Direct iPhone mode (Roku blocked cloud IP)`);
+        promptDirectIosShortcutMode();
+        return;
+      }
       showToast(`⚠️ ${data.error || 'Connect your Roku TV first'}`);
       els.setupModal.classList.add('open');
       return;
@@ -807,6 +821,14 @@ async function launchAppOnTv(appId, appName) {
 }
 
 async function sendRemoteKey(key) {
+  const directShortcutEnabled = localStorage.getItem('roku_use_shortcuts') === 'true';
+  const targetTvIp = localStorage.getItem('roku_direct_tv_ip') || '192.168.1.8';
+
+  if (directShortcutEnabled) {
+    executeIosShortcutCommand('keypress', key, targetTvIp);
+    return;
+  }
+
   try {
     const res = await fetch('/api/roku/keypress', {
       method: 'POST',
@@ -815,10 +837,40 @@ async function sendRemoteKey(key) {
     });
     if (!res.ok) {
       const data = await res.json();
+      if (res.status === 403) {
+        promptDirectIosShortcutMode();
+        return;
+      }
       showToast(`⚠️ ${data.error || 'TV not connected'}`);
     }
   } catch (err) {
     showToast(`⚠️ Remote error: ${err.message}`);
+  }
+}
+
+function executeIosShortcutCommand(type, param, tvIp) {
+  // Uses Apple Shortcuts URL Scheme to run directly on the iPhone over local Wi-Fi
+  // Shortcut Name: "RokuControl"
+  // Input: "192.168.1.8 launch 34376" or "192.168.1.8 keypress Home"
+  const payload = `${tvIp} ${type} ${param}`;
+  const shortcutUrl = `shortcuts://run-shortcut?name=RokuControl&input=text&text=${encodeURIComponent(payload)}`;
+  
+  // Invisible iframe dispatch prevents page reload on Safari
+  let iframe = document.getElementById('shortcutFrame');
+  if (!iframe) {
+    iframe = document.createElement('iframe');
+    iframe.id = 'shortcutFrame';
+    iframe.style.display = 'none';
+    document.body.appendChild(iframe);
+  }
+  iframe.src = shortcutUrl;
+}
+
+function promptDirectIosShortcutMode() {
+  if (confirm("Roku blocked the external cloud server with HTTP 403.\n\nWould you like to switch to 'Direct iPhone Control' using Apple Shortcuts? (Works with your MacBook 100% off)")) {
+    localStorage.setItem('roku_use_shortcuts', 'true');
+    localStorage.setItem('roku_direct_tv_ip', '192.168.1.8');
+    window.location.reload();
   }
 }
 
