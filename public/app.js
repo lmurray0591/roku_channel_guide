@@ -780,12 +780,12 @@ async function launchAppOnTv(appId, appName) {
     els.remoteModal.classList.add('open');
   }
 
-  // Check if user enabled Direct iPhone Shortcut mode or if we are on Render
-  const directShortcutEnabled = localStorage.getItem('roku_use_shortcuts') === 'true';
-  const targetTvIp = localStorage.getItem('roku_direct_tv_ip') || '192.168.1.8';
-
-  if (directShortcutEnabled) {
-    executeIosShortcutCommand('launch', appId, targetTvIp);
+  // If running on Render (not localhost/LAN), automatically send command directly from iPhone to Roku!
+  const isCloudHosted = !['localhost', '127.0.0.1'].includes(window.location.hostname) && !/^192\.168\./.test(window.location.hostname);
+  
+  if (isCloudHosted || localStorage.getItem('roku_direct_mode') === 'true') {
+    showToast(`📱 Sending direct to Roku TV (192.168.1.8)...`);
+    await sendDirectToRoku(`/launch/${encodeURIComponent(appId)}`);
     return;
   }
 
@@ -801,8 +801,9 @@ async function launchAppOnTv(appId, appName) {
     const data = await res.json();
     if (!res.ok) {
       if (res.status === 403 || (data.error && data.error.includes('403'))) {
-        showToast(`💡 Switch to Direct iPhone mode (Roku blocked cloud IP)`);
-        promptDirectIosShortcutMode();
+        showToast(`📱 Switching to Direct iPhone Mode...`);
+        localStorage.setItem('roku_direct_mode', 'true');
+        await sendDirectToRoku(`/launch/${encodeURIComponent(appId)}`);
         return;
       }
       showToast(`⚠️ ${data.error || 'Connect your Roku TV first'}`);
@@ -821,11 +822,10 @@ async function launchAppOnTv(appId, appName) {
 }
 
 async function sendRemoteKey(key) {
-  const directShortcutEnabled = localStorage.getItem('roku_use_shortcuts') === 'true';
-  const targetTvIp = localStorage.getItem('roku_direct_tv_ip') || '192.168.1.8';
+  const isCloudHosted = !['localhost', '127.0.0.1'].includes(window.location.hostname) && !/^192\.168\./.test(window.location.hostname);
 
-  if (directShortcutEnabled) {
-    executeIosShortcutCommand('keypress', key, targetTvIp);
+  if (isCloudHosted || localStorage.getItem('roku_direct_mode') === 'true') {
+    await sendDirectToRoku(`/keypress/${encodeURIComponent(key)}`);
     return;
   }
 
@@ -838,7 +838,8 @@ async function sendRemoteKey(key) {
     if (!res.ok) {
       const data = await res.json();
       if (res.status === 403) {
-        promptDirectIosShortcutMode();
+        localStorage.setItem('roku_direct_mode', 'true');
+        await sendDirectToRoku(`/keypress/${encodeURIComponent(key)}`);
         return;
       }
       showToast(`⚠️ ${data.error || 'TV not connected'}`);
@@ -848,29 +849,44 @@ async function sendRemoteKey(key) {
   }
 }
 
-function executeIosShortcutCommand(type, param, tvIp) {
-  // Uses Apple Shortcuts URL Scheme to run directly on the iPhone over local Wi-Fi
-  // Shortcut Name: "RokuControl"
-  // Input: "192.168.1.8 launch 34376" or "192.168.1.8 keypress Home"
-  const payload = `${tvIp} ${type} ${param}`;
-  const shortcutUrl = `shortcuts://run-shortcut?name=RokuControl&input=text&text=${encodeURIComponent(payload)}`;
-  
-  // Invisible iframe dispatch prevents page reload on Safari
-  let iframe = document.getElementById('shortcutFrame');
-  if (!iframe) {
-    iframe = document.createElement('iframe');
-    iframe.id = 'shortcutFrame';
-    iframe.style.display = 'none';
-    document.body.appendChild(iframe);
-  }
-  iframe.src = shortcutUrl;
-}
+// Direct iPhone-to-Roku dispatch (Works over apartment Wi-Fi with MacBook 100% off)
+async function sendDirectToRoku(endpoint) {
+  const tvIp = localStorage.getItem('roku_direct_tv_ip') || state.activeTvIp || '192.168.1.8';
+  const url = `http://${tvIp}:8060${endpoint}`;
 
-function promptDirectIosShortcutMode() {
-  if (confirm("Roku blocked the external cloud server with HTTP 403.\n\nWould you like to switch to 'Direct iPhone Control' using Apple Shortcuts? (Works with your MacBook 100% off)")) {
-    localStorage.setItem('roku_use_shortcuts', 'true');
-    localStorage.setItem('roku_direct_tv_ip', '192.168.1.8');
-    window.location.reload();
+  // Method 1: Fetch with mode 'no-cors' (Supported directly in mobile browsers to local IP)
+  try {
+    await fetch(url, {
+      method: 'POST',
+      mode: 'no-cors',
+      cache: 'no-store'
+    });
+    return true;
+  } catch (fetchErr) {
+    console.warn('Direct fetch attempt failed, using form-POST fallback:', fetchErr);
+  }
+
+  // Method 2: Standard form submission target iframe fallback (Bypasses CORS restrictions)
+  try {
+    let iframe = document.getElementById('rokuDirectFrame');
+    if (!iframe) {
+      iframe = document.createElement('iframe');
+      iframe.id = 'rokuDirectFrame';
+      iframe.name = 'rokuDirectFrame';
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
+    }
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = url;
+    form.target = 'rokuDirectFrame';
+    document.body.appendChild(form);
+    form.submit();
+    setTimeout(() => form.remove(), 1000);
+    return true;
+  } catch (e) {
+    console.error('All direct iPhone-to-Roku methods failed:', e);
+    return false;
   }
 }
 
