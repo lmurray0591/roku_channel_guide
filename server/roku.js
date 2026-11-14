@@ -632,11 +632,10 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
     ? Math.max(timeoutMs, 4000)
     : timeoutMs;
 
-  // On macOS (not iOS sandbox), non-platform Node binaries can receive EHOSTUNREACH on LAN sockets
-  // due to Local Network Privacy restrictions, whereas /usr/bin/curl succeeds.
-  // In iOS sandboxes (e.g. a-Shell), execFile is blocked (EPERM), so use native fetch directly.
-  const isIOS = process.platform === 'darwin' && os.cpus().length > 0 && typeof process.getuid === 'function' && process.getuid() === 501 && !fs.existsSync('/bin/bash');
-  if (process.platform === 'darwin' && !isIOS && /^http:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(url)) {
+  // In iOS sandboxes (e.g. a-Shell), all child_process spawning is forbidden by Apple.
+  // Only attempt curlFetch on real macOS machines where /usr/bin/curl is accessible.
+  const isRealMac = process.platform === 'darwin' && fs.existsSync('/bin/zsh') && fs.existsSync('/usr/bin/curl');
+  if (isRealMac && /^http:\/\/(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(url)) {
     try {
       return await curlFetch(url, options, effectiveTimeout);
     } catch {}
@@ -761,14 +760,20 @@ function sendWakeOnLan(mac, broadcastIp = '255.255.255.255') {
 function lookupMacForIp(ip) {
   return new Promise((resolve) => {
     if (!ip) return resolve(null);
-    execFile('/usr/sbin/arp', ['-n', ip], { timeout: 1200 }, (err, stdout) => {
-      if (err || !stdout) return resolve(null);
-      const m = stdout.match(/([0-9a-f]{1,2}(?::[0-9a-f]{1,2}){5})/i);
-      if (m && m[1] && m[1] !== 'ff:ff:ff:ff:ff:ff') {
-        return resolve(m[1].toLowerCase());
-      }
+    const isRealMac = process.platform === 'darwin' && fs.existsSync('/bin/zsh') && fs.existsSync('/usr/sbin/arp');
+    if (!isRealMac) return resolve(null);
+    try {
+      execFile('/usr/sbin/arp', ['-n', ip], { timeout: 1200 }, (err, stdout) => {
+        if (err || !stdout) return resolve(null);
+        const m = stdout.match(/([0-9a-f]{1,2}(?::[0-9a-f]{1,2}){5})/i);
+        if (m && m[1] && m[1] !== 'ff:ff:ff:ff:ff:ff') {
+          return resolve(m[1].toLowerCase());
+        }
+        resolve(null);
+      });
+    } catch {
       resolve(null);
-    });
+    }
   });
 }
 
@@ -833,6 +838,8 @@ async function wakeRokuTv(ip) {
 
 function getArpCandidateIps() {
   return new Promise((resolve) => {
+    const isRealMac = process.platform === 'darwin' && fs.existsSync('/bin/zsh') && fs.existsSync('/usr/sbin/arp');
+    if (!isRealMac) return resolve([]);
     try {
       execFile('/usr/sbin/arp', ['-an'], { timeout: 1500 }, (err, stdout) => {
         if (err || !stdout) return resolve([]);
