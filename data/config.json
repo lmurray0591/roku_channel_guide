@@ -18,7 +18,10 @@
       "modelName": "Roku 2",
       "vendorName": "Roku",
       "isTv": false,
-      "lastSeen": "2026-11-12T22:21:17.840Z"
+      "lastSeen": "2026-11-18T15:16:45.118Z",
+      "mac": "b8:a1:75:29:39:c1",
+      "wifiMac": "b8:a1:75:29:39:c1",
+      "ethernetMac": "b8:a1:75:29:39:c0"
     }
   ],
   "enabledAppKeys": [

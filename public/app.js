@@ -116,12 +116,52 @@ function isSameLocalDay(isoDate) {
   return d.toDateString() === now.toDateString();
 }
 
+function isCloudHostedEnv() {
+  const h = window.location.hostname;
+  if (!h || h === 'localhost' || h === '127.0.0.1' || h.endsWith('.local')) return false;
+  if (/^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h)) return false;
+  return true;
+}
+
+async function probeTvDirectlyFromBrowser(ip) {
+  if (!ip) return false;
+  // Over HTTPS in standard browsers, http:// LAN fetches are blocked by Mixed Content
+  if (window.location.protocol === 'https:' && !window.location.search.includes('scriptable=1') && typeof window.rokuNativeBridge !== 'function') {
+    return false;
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 1800);
+  try {
+    await fetch(`http://${ip}:8060/query/device-info`, {
+      method: 'GET',
+      mode: 'no-cors',
+      cache: 'no-store',
+      signal: controller.signal
+    });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function hasServerLanPath() {
+  return !isCloudHostedEnv() || Boolean(state.relayConnected);
+}
+
 async function fetchStatus() {
   try {
     const res = await fetch('/api/status');
     const data = await res.json();
-    state.tvConnected = data.connected;
-    state.activeTvIp = data.activeTvIp || data.configuredIp;
+    const directSavedIp = localStorage.getItem('roku_direct_tv_ip');
+    state.relayConnected = Boolean(data.relayConnected);
+    state.tvConnected = Boolean(data.connected);
+    state.tvReachable = Boolean(data.reachable);
+    state.tvStandby = Boolean(data.standby);
+    state.activeTvIp = (!hasServerLanPath() && directSavedIp)
+      ? directSavedIp
+      : (data.activeTvIp || data.configuredIp || directSavedIp);
     state.activeTv = data.activeTv;
     state.savedTvs = data.savedTvs || [];
     state.device = data.device;
@@ -129,6 +169,18 @@ async function fetchStatus() {
     state.installedApps = data.installedApps || [];
     state.appsCatalog = data.appsCatalog || [];
     state.enabledAppKeys = data.enabledAppKeys || [];
+
+    // If server couldn't reach the TV over LAN, check directly from the phone/browser when possible
+    if (!state.tvConnected && state.activeTvIp) {
+      const directOnline = await probeTvDirectlyFromBrowser(state.activeTvIp);
+      if (directOnline) {
+        state.tvConnected = true;
+        state.tvReachable = true;
+        state.tvStandby = false;
+        localStorage.setItem('roku_direct_mode', 'true');
+        localStorage.setItem('roku_direct_tv_ip', state.activeTvIp);
+      }
+    }
 
     updateTvStatusUI();
     renderSavedTvs();
@@ -166,7 +218,7 @@ function updateTvStatusUI() {
   const tvName = state.activeTv?.name || state.device?.name || 'Roku TV';
   const tvIp = state.activeTvIp || state.device?.ip || '';
 
-  if (state.tvConnected && state.device) {
+  if (state.tvConnected) {
     els.tvStatusBtn.classList.add('connected');
     els.tvStatusDot.classList.add('online');
     const activeSuffix = state.activeApp && state.activeApp.name !== 'Roku'
@@ -190,21 +242,63 @@ function updateTvStatusUI() {
     if (els.modalWakeBtn) {
       els.modalWakeBtn.style.display = 'none';
     }
-  } else if (state.activeTvIp) {
+  } else if (state.activeTvIp && !hasServerLanPath()) {
+    els.tvStatusBtn.classList.add('connected');
+    els.tvStatusDot.classList.add('online');
+    els.tvStatusText.textContent = `${tvName} (Wi-Fi Direct)`;
+
+    els.activeTvDot.classList.add('online');
+    els.activeTvName.textContent = tvName;
+    els.activeTvBadge.textContent = 'Direct Wi-Fi';
+    els.activeTvBadge.className = 'tv-badge online';
+    els.activeTvMeta.textContent = `${tvIp} • Home Mac relay offline — using direct iOS dispatch`;
+    els.remoteActiveAppLabel.textContent = `${tvName} (${tvIp})`;
+
+    if (els.tvPowerBtn) {
+      els.tvPowerBtn.classList.remove('tv-on');
+      els.tvPowerBtn.title = 'Send Power On / Wake signal';
+      els.tvPowerIcon.textContent = '⚡';
+      els.tvPowerLabel.textContent = 'Power';
+    }
+    if (els.modalWakeBtn) {
+      els.modalWakeBtn.style.display = 'inline-block';
+    }
+  } else if (state.activeTvIp && state.tvStandby) {
     els.tvStatusBtn.classList.remove('connected');
     els.tvStatusDot.classList.remove('online');
     els.tvStatusText.textContent = `${tvName} (Standby)`;
 
     els.activeTvDot.classList.remove('online');
     els.activeTvName.textContent = tvName;
-    els.activeTvBadge.textContent = 'Standby / Off';
+    els.activeTvBadge.textContent = 'Standby';
     els.activeTvBadge.className = 'tv-badge';
-    els.activeTvMeta.textContent = `${tvIp} • TV is off or in standby`;
+    els.activeTvMeta.textContent = `${tvIp} • TV is in standby — tap Wake TV to power on`;
     els.remoteActiveAppLabel.textContent = `${tvName} (${tvIp})`;
 
     if (els.tvPowerBtn) {
       els.tvPowerBtn.classList.remove('tv-on');
-      els.tvPowerBtn.title = 'TV is off / standby (tap to wake)';
+      els.tvPowerBtn.title = 'TV is in standby (tap to wake)';
+      els.tvPowerIcon.textContent = '⚡';
+      els.tvPowerLabel.textContent = 'Wake TV';
+    }
+    if (els.modalWakeBtn) {
+      els.modalWakeBtn.style.display = 'inline-block';
+    }
+  } else if (state.activeTvIp) {
+    els.tvStatusBtn.classList.remove('connected');
+    els.tvStatusDot.classList.remove('online');
+    els.tvStatusText.textContent = `${tvName} (Unreachable)`;
+
+    els.activeTvDot.classList.remove('online');
+    els.activeTvName.textContent = tvName;
+    els.activeTvBadge.textContent = 'Wi-Fi Unreachable';
+    els.activeTvBadge.className = 'tv-badge';
+    els.activeTvMeta.textContent = `${tvIp} • Not responding on Wi-Fi (if TV is ON, check TV Settings > Network > Check connection)`;
+    els.remoteActiveAppLabel.textContent = `${tvName} (${tvIp})`;
+
+    if (els.tvPowerBtn) {
+      els.tvPowerBtn.classList.remove('tv-on');
+      els.tvPowerBtn.title = 'Try waking TV over Wi-Fi';
       els.tvPowerIcon.textContent = '⚡';
       els.tvPowerLabel.textContent = 'Wake TV';
     }
@@ -780,14 +874,17 @@ async function launchAppOnTv(appId, appName) {
     els.remoteModal.classList.add('open');
   }
 
-  // If running on Render (not localhost/LAN), automatically send command directly from iPhone to Roku!
-  const isCloudHosted = !['localhost', '127.0.0.1'].includes(window.location.hostname) && !/^192\.168\./.test(window.location.hostname);
-  
-  if (isCloudHosted || localStorage.getItem('roku_direct_mode') === 'true') {
-    showToast(`📱 Sending direct to Roku TV (192.168.1.8)...`);
-    await sendDirectToRoku(`/launch/${encodeURIComponent(appId)}`);
+  // If running on Render AND Home Mac relay is offline, fall back to direct iOS Scriptable dispatch
+  if (!hasServerLanPath()) {
+    const directIp = localStorage.getItem('roku_direct_tv_ip') || state.activeTvIp || '192.168.1.8';
+    const sent = await sendDirectToRoku(`/launch/${encodeURIComponent(appId)}`);
+    if (sent) {
+      showToast(`📱 Sent to Roku TV (${directIp})!`);
+    }
     return;
   }
+
+  localStorage.removeItem('roku_direct_mode');
 
   try {
     const res = await fetch('/api/roku/launch', {
@@ -800,12 +897,6 @@ async function launchAppOnTv(appId, appName) {
     });
     const data = await res.json();
     if (!res.ok) {
-      if (res.status === 403 || (data.error && data.error.includes('403'))) {
-        showToast(`📱 Switching to Direct iPhone Mode...`);
-        localStorage.setItem('roku_direct_mode', 'true');
-        await sendDirectToRoku(`/launch/${encodeURIComponent(appId)}`);
-        return;
-      }
       showToast(`⚠️ ${data.error || 'Connect your Roku TV first'}`);
       els.setupModal.classList.add('open');
       return;
@@ -822,12 +913,12 @@ async function launchAppOnTv(appId, appName) {
 }
 
 async function sendRemoteKey(key) {
-  const isCloudHosted = !['localhost', '127.0.0.1'].includes(window.location.hostname) && !/^192\.168\./.test(window.location.hostname);
-
-  if (isCloudHosted || localStorage.getItem('roku_direct_mode') === 'true') {
+  if (!hasServerLanPath()) {
     await sendDirectToRoku(`/keypress/${encodeURIComponent(key)}`);
     return;
   }
+
+  localStorage.removeItem('roku_direct_mode');
 
   try {
     const res = await fetch('/api/roku/keypress', {
@@ -837,11 +928,6 @@ async function sendRemoteKey(key) {
     });
     if (!res.ok) {
       const data = await res.json();
-      if (res.status === 403) {
-        localStorage.setItem('roku_direct_mode', 'true');
-        await sendDirectToRoku(`/keypress/${encodeURIComponent(key)}`);
-        return;
-      }
       showToast(`⚠️ ${data.error || 'TV not connected'}`);
     }
   } catch (err) {
@@ -853,14 +939,15 @@ async function sendRemoteKey(key) {
 async function sendDirectToRoku(endpoint) {
   const tvIp = localStorage.getItem('roku_direct_tv_ip') || state.activeTvIp || '192.168.1.8';
   const url = `http://${tvIp}:8060${endpoint}`;
+  const isScriptable = window.location.search.includes('scriptable=1') || typeof window.rokuNativeBridge === 'function';
 
   // Trigger Scriptable's shouldAllowRequest interceptor directly
-  if (window.location.search.includes('scriptable=1') || typeof window.rokuNativeBridge === 'function') {
+  if (isScriptable) {
     window.location.href = `scriptable-roku://${encodeURIComponent(url)}`;
     return true;
   }
 
-  // Fallback for standard local HTTP or Scriptable without query param
+  // Fallback for standard local HTTP
   try {
     await fetch(url, {
       method: 'POST',
@@ -869,9 +956,12 @@ async function sendDirectToRoku(endpoint) {
     });
     return true;
   } catch (fetchErr) {
-    // If fetch was blocked by HTTPS mixed-content, emit scriptable-roku:// scheme
-    window.location.href = `scriptable-roku://${encodeURIComponent(url)}`;
-    return true;
+    if (window.location.protocol === 'https:') {
+      showToast('⚠️ Safari blocks HTTPS→HTTP TV commands. Open via Scriptable or http://192.168.1.157:3000');
+      return false;
+    }
+    showToast(`⚠️ Could not reach Roku TV at ${tvIp}:8060 on Wi-Fi`);
+    return false;
   }
 }
 
@@ -1078,6 +1168,20 @@ els.connectIpBtn.addEventListener('click', async () => {
   els.connectIpBtn.textContent = 'Connecting...';
   els.connectIpBtn.disabled = true;
   try {
+    if (!hasServerLanPath()) {
+      localStorage.setItem('roku_direct_tv_ip', ip);
+      localStorage.setItem('roku_direct_mode', 'true');
+      state.activeTvIp = ip;
+      if (name) {
+        state.activeTv = { ...(state.activeTv || {}), ip, name };
+      }
+      els.manualIpInput.value = '';
+      if (els.manualNameInput) els.manualNameInput.value = '';
+      updateTvStatusUI();
+      showToast(`✅ Direct Wi-Fi TV IP set to ${ip}!`);
+      return;
+    }
+
     const res = await fetch('/api/roku/connect', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1085,8 +1189,22 @@ els.connectIpBtn.addEventListener('click', async () => {
     });
     const data = await res.json();
     if (!res.ok) {
+      // Check if browser itself can reach the TV directly
+      const directOnline = await probeTvDirectlyFromBrowser(ip);
+      if (directOnline) {
+        localStorage.setItem('roku_direct_tv_ip', ip);
+        localStorage.setItem('roku_direct_mode', 'true');
+        state.activeTvIp = ip;
+        state.tvConnected = true;
+        els.manualIpInput.value = '';
+        if (els.manualNameInput) els.manualNameInput.value = '';
+        updateTvStatusUI();
+        showToast(`✅ Connected directly to ${name || ip} over Wi-Fi!`);
+        return;
+      }
       showToast(`⚠️ ${data.error}`);
     } else {
+      localStorage.setItem('roku_direct_tv_ip', ip);
       showToast(`✅ Connected to ${data.device.name}!`);
       els.manualIpInput.value = '';
       if (els.manualNameInput) els.manualNameInput.value = '';
@@ -1111,6 +1229,14 @@ async function powerOnTv() {
   showToast(`⚡ Sending wake signal to ${tvName}...`);
   if (els.tvPowerLabel) els.tvPowerLabel.textContent = 'Waking...';
   if (els.modalWakeBtn) els.modalWakeBtn.textContent = '⚡ Waking...';
+
+  if (!hasServerLanPath()) {
+    await sendDirectToRoku('/keypress/PowerOn');
+    showToast(`⚡ Sent PowerOn to ${tvName} (${state.activeTvIp})!`);
+    if (els.modalWakeBtn) els.modalWakeBtn.textContent = '⚡ Power On';
+    setTimeout(fetchStatus, 1800);
+    return;
+  }
 
   try {
     const res = await fetch('/api/roku/power-on', {
@@ -1537,9 +1663,38 @@ document.querySelectorAll('.r-btn[data-key]').forEach((btn) => {
 (async function init() {
   initVoiceControl();
   await Promise.all([fetchStatus(), fetchGuide(false)]);
+
+  // Keep TV connection status fresh
+  setInterval(() => {
+    if (document.visibilityState !== 'hidden') {
+      fetchStatus();
+    }
+  }, 20000);
+
   // Refresh live scores every 45 seconds
   setInterval(() => {
-    fetchGuide(false);
+    if (document.visibilityState !== 'hidden') {
+      fetchGuide(false);
+    }
   }, 45000);
+
+  // Immediately re-verify TV status & schedule when reopening the app after being away
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      fetchStatus();
+      fetchGuide(false);
+    }
+  });
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) {
+      fetchStatus();
+      fetchGuide(false);
+    }
+  });
+  window.addEventListener('online', () => {
+    fetchStatus();
+    fetchGuide(false);
+  });
 })();
+
 

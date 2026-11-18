@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct GuideView: View {
     @EnvironmentObject private var tvManager: TVManager
+    @Environment(\.scenePhase) private var scenePhase
     @State private var games: [SportsGame] = []
     @State private var isLoading: Bool = true
     @State private var searchText: String = ""
@@ -191,6 +192,13 @@ public struct GuideView: View {
             .task {
                 await reloadGames()
             }
+            .onChange(of: scenePhase) { newPhase in
+                if newPhase == .active {
+                    Task {
+                        await tvManager.refreshActiveTvStatus()
+                    }
+                }
+            }
         }
     }
 
@@ -228,7 +236,9 @@ public struct GuideView: View {
 
     private func reloadGames() async {
         isLoading = true
+        async let tvCheck: Void = tvManager.refreshActiveTvStatus()
         let fetched = await SportsAPIService.shared.fetchAllGames()
+        _ = await tvCheck
         self.games = fetched
         self.isLoading = false
     }

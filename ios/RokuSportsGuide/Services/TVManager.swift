@@ -102,6 +102,12 @@ public final class TVManager: ObservableObject {
         showToast("🗑️ Removed \(device.name)")
     }
 
+    public func refreshActiveTvStatus() async {
+        if let ip = activeTv?.ip {
+            await checkStatus(ip: ip)
+        }
+    }
+
     public func checkStatus(ip: String) async {
         if let info = await service.queryDeviceInfo(ip: ip) {
             if let idx = savedTvs.firstIndex(where: { $0.ip == ip }) {
@@ -111,6 +117,7 @@ public final class TVManager: ObservableObject {
             if activeTv?.ip == ip {
                 activeTv?.isOnline = true
             }
+            saveTvsToDisk()
         } else {
             if let idx = savedTvs.firstIndex(where: { $0.ip == ip }) {
                 savedTvs[idx].isOnline = false
@@ -131,17 +138,19 @@ public final class TVManager: ObservableObject {
         var found: [RokuDevice] = []
 
         for prefix in candidatePrefixes {
-            // Check in batches of 20
-            await withTaskGroup(of: RokuDevice?.self) { group in
-                for i in 1...60 {
-                    let testIp = "\(prefix).\(i)"
-                    group.addTask {
-                        await RokuService.shared.queryDeviceInfo(ip: testIp)
+            for batchStart in stride(from: 1, through: 254, by: 40) {
+                let batchEnd = min(254, batchStart + 39)
+                await withTaskGroup(of: RokuDevice?.self) { group in
+                    for i in batchStart...batchEnd {
+                        let testIp = "\(prefix).\(i)"
+                        group.addTask {
+                            await RokuService.shared.queryDeviceInfo(ip: testIp)
+                        }
                     }
-                }
-                for await result in group {
-                    if let dev = result {
-                        found.append(dev)
+                    for await result in group {
+                        if let dev = result {
+                            found.append(dev)
+                        }
                     }
                 }
             }

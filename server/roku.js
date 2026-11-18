@@ -643,11 +643,14 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 3500) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), effectiveTimeout);
   try {
-    const targetTvIp = process.env.ROKU_TV_IP || '192.168.1.8';
+    const urlIpMatch = url.match(/^https?:\/\/(\d+\.\d+\.\d+\.\d+)(?::(\d+))?\//);
     const mergedHeaders = {
-      'Host': `${targetTvIp}:8060`,
       ...(options.headers || {})
     };
+    if (!urlIpMatch && (process.env.ROKU_TUNNEL_URL || process.env.ROKU_PUBLIC_URL)) {
+      const targetTvIp = process.env.ROKU_TV_IP || '192.168.1.8';
+      mergedHeaders['Host'] = `${targetTvIp}:8060`;
+    }
     const res = await fetch(url, {
       ...options,
       headers: mergedHeaders,
@@ -698,8 +701,8 @@ async function queryDeviceInfo(ip, timeoutMs = 1500) {
       return null;
     }
     const wifiMac = (info['wifi-mac'] || '').toLowerCase();
-    const ethMac = (info['ethernet-mac'] || '').toLowerCase();
-    const mac = wifiMac || ethMac || '';
+    const ethernetMac = (info['ethernet-mac'] || '').toLowerCase();
+    const mac = wifiMac || ethernetMac || '';
     lastQueryError = null;
     return {
       ip,
@@ -709,6 +712,7 @@ async function queryDeviceInfo(ip, timeoutMs = 1500) {
       vendorName: info['vendor-name'] || 'TCL',
       isTv: info['is-tv'] === 'true',
       powerMode: info['power-mode'] || 'PowerOn',
+      ecpSettingMode: info['ecp-setting-mode'] || null,
       serialNumber: info['serial-number'] || '',
       mac,
       wifiMac,
@@ -913,7 +917,7 @@ async function discoverViaSubnetScan() {
   }
 
   const found = [];
-  const batchSize = 45;
+  const batchSize = 32;
   for (let i = 0; i < candidateIps.length; i += batchSize) {
     const batch = candidateIps.slice(i, i + batchSize);
     const results = await Promise.all(
@@ -922,13 +926,66 @@ async function discoverViaSubnetScan() {
     for (const dev of results) {
       if (dev) found.push(dev);
     }
-    if (found.length > 0) break;
   }
   return found;
 }
 
+function matchesSamePhysicalTv(savedTv, discoveredDev) {
+  if (!savedTv || !discoveredDev) return false;
+  const savedMacs = [savedTv.mac, savedTv.wifiMac, savedTv.ethernetMac]
+    .filter(Boolean)
+    .map((m) => m.toLowerCase());
+  const devMacs = [discoveredDev.mac, discoveredDev.wifiMac, discoveredDev.ethernetMac]
+    .filter(Boolean)
+    .map((m) => m.toLowerCase());
+  if (savedMacs.length > 0 && devMacs.some((m) => savedMacs.includes(m))) {
+    return true;
+  }
+  if (savedTv.name && discoveredDev.name && savedTv.name === discoveredDev.name && savedTv.name !== 'Roku TV') {
+    return true;
+  }
+  return false;
+}
+
+async function relocateTvIfMoved(targetTv) {
+  if (!targetTv) return null;
+  const arpIps = await getArpCandidateIps();
+  const candidates = arpIps.filter((ip) => ip !== targetTv.ip);
+  if (candidates.length === 0) return null;
+
+  const arpResults = await Promise.all(
+    candidates.map((ip) => queryDeviceInfo(ip, 900))
+  );
+  for (const dev of arpResults) {
+    if (dev && matchesSamePhysicalTv(targetTv, dev)) {
+      const cfg = loadConfig();
+      const tvs = [...(cfg.savedTvs || [])];
+      const idx = tvs.findIndex((t) => t.ip === targetTv.ip || matchesSamePhysicalTv(t, dev));
+      const tvRecord = {
+        ...(idx >= 0 ? tvs[idx] : {}),
+        ip: dev.ip,
+        name: dev.name || targetTv.name,
+        modelName: dev.modelName,
+        vendorName: dev.vendorName,
+        isTv: dev.isTv,
+        mac: dev.mac || targetTv.mac || null,
+        wifiMac: dev.wifiMac || targetTv.wifiMac || null,
+        ethernetMac: dev.ethernetMac || targetTv.ethernetMac || null,
+        lastSeen: new Date().toISOString()
+      };
+      if (idx >= 0) tvs[idx] = tvRecord;
+      else tvs.push(tvRecord);
+      const nextActiveIp = cfg.activeTvIp === targetTv.ip ? dev.ip : cfg.activeTvIp;
+      saveConfig({ savedTvs: tvs, activeTvIp: nextActiveIp });
+      return dev;
+    }
+  }
+  return null;
+}
+
 async function discoverRokuDevices() {
   const devicesMap = new Map();
+  const hasFoundTv = () => [...devicesMap.values()].some((d) => d.isTv);
 
   // 1. Check all saved TVs first
   const cfg = loadConfig();
@@ -943,15 +1000,15 @@ async function discoverRokuDevices() {
   const arpIps = await getArpCandidateIps();
   if (arpIps.length > 0) {
     const arpResults = await Promise.all(
-      arpIps.map((ip) => queryDeviceInfo(ip, 1200))
+      arpIps.filter((ip) => !devicesMap.has(ip)).map((ip) => queryDeviceInfo(ip, 1200))
     );
     for (const info of arpResults) {
       if (info) devicesMap.set(info.ip, info);
     }
   }
 
-  // 3. Try SSDP multicast discovery if none found yet
-  if (devicesMap.size === 0) {
+  // 3. Try SSDP multicast discovery if no Roku TV found yet
+  if (!hasFoundTv()) {
     const ssdpIps = await discoverViaSSDP(1800);
     for (const ip of ssdpIps) {
       if (!devicesMap.has(ip)) {
@@ -961,8 +1018,8 @@ async function discoverRokuDevices() {
     }
   }
 
-  // 4. Fallback to fast subnet scan if none found
-  if (devicesMap.size === 0) {
+  // 4. Fallback to full subnet scan if no Roku TV found yet
+  if (!hasFoundTv()) {
     const scanned = await discoverViaSubnetScan();
     for (const dev of scanned) {
       devicesMap.set(dev.ip, dev);
@@ -974,8 +1031,13 @@ async function discoverRokuDevices() {
   if (devices.length > 0) {
     const currentCfg = loadConfig();
     const tvs = [...(currentCfg.savedTvs || [])];
+    let nextActiveIp = currentCfg.activeTvIp;
     for (const dev of devices) {
-      const idx = tvs.findIndex((t) => t.ip === dev.ip);
+      let idx = tvs.findIndex((t) => t.ip === dev.ip);
+      if (idx < 0) {
+        idx = tvs.findIndex((t) => matchesSamePhysicalTv(t, dev));
+      }
+      const prevIp = idx >= 0 ? tvs[idx].ip : null;
       const tvRecord = {
         ip: dev.ip,
         name: dev.name,
@@ -989,11 +1051,14 @@ async function discoverRokuDevices() {
       };
       if (idx >= 0) {
         tvs[idx] = { ...tvs[idx], ...tvRecord };
+        if (prevIp && prevIp === nextActiveIp && prevIp !== dev.ip) {
+          nextActiveIp = dev.ip;
+        }
       } else {
         tvs.push(tvRecord);
       }
     }
-    const activeTvIp = currentCfg.activeTvIp || devices[0].ip;
+    const activeTvIp = nextActiveIp || devices[0].ip;
     saveConfig({ savedTvs: tvs, activeTvIp });
   }
   return devices;
@@ -1178,6 +1243,9 @@ async function launchRokuApp(ip, appId) {
   // 3. App is not open yet; launch it directly
   const url = getRokuEndpoint(ip, `/launch/${encodeURIComponent(appId)}`);
   const res = await fetchWithTimeout(url, { method: 'POST' }, 2500);
+  if (res.status === 403) {
+    throw new Error('Roku blocked remote control (HTTP 403). On your TV go to Settings > System > Advanced system settings > Control by mobile apps > Network access and set it to "Permissive" / "Enabled".');
+  }
   if (!res.ok && res.status !== 204) {
     throw new Error(`Roku TV returned HTTP ${res.status} when launching app ${appId}`);
   }
@@ -1205,7 +1273,13 @@ async function sendKeypress(ip, key) {
   }
   const url = getRokuEndpoint(ip, `/keypress/${encodeURIComponent(key)}`);
   const res = await fetchWithTimeout(url, { method: 'POST' }, 2000);
-  return { ok: res.ok || res.status === 204 };
+  if (res.status === 403) {
+    throw new Error('Roku blocked remote control (HTTP 403). Set TV "Control by mobile apps > Network access" to "Permissive" / "Enabled".');
+  }
+  if (!res.ok && res.status !== 204) {
+    throw new Error(`Roku TV returned HTTP ${res.status} for key ${key}`);
+  }
+  return { ok: true };
 }
 
 module.exports = {
@@ -1219,6 +1293,7 @@ module.exports = {
   getLocalSubnets,
   queryDeviceInfo,
   discoverRokuDevices,
+  relocateTvIfMoved,
   getInstalledApps,
   getActiveApp,
   queryMediaPlayer,
